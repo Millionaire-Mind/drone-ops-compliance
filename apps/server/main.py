@@ -1,23 +1,14 @@
 from __future__ import annotations
 
+import logging
+import os
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-
-from apps.server.services.faa_airspace import analyze_airspace
-from apps.server.services.faa_tfr import (
-    determine_us_state_from_latlon,
-    fetch_tfr_list_json,
-    filter_tfrs_by_state,
-)
-from apps.server.services.nws_weather import (
-    fetch_latest_observation_by_latlon,
-    part107_compliance_assessment,
-)
-from packages.core.rules import decide_preflight
 
 from .models import (
     AnalyzeWeatherInput,
@@ -28,18 +19,41 @@ from .models import (
     ToolMeta,
     ToolResponse,
 )
+from apps.server.services.faa_airspace import analyze_airspace
+from apps.server.services.faa_tfr import (
+    determine_us_state_from_latlon,
+    fetch_tfr_list_json,
+    filter_tfrs_by_state,
+)
+from apps.server.services.nws_weather import fetch_latest_observation_by_latlon, part107_compliance_assessment
+from packages.core.rules import decide_preflight
 
 APP_NAME = "Drone Ops & Compliance Tool Server"
-
-app = FastAPI(
-    title=APP_NAME,
-    version="0.5.0",
-    description="Read-only advisory tools for drone preflight checks (airspace, weather, TFRs).",
-)
+APP_VERSION = "0.6.0"
 
 
 def utc_now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def configure_logging() -> None:
+    level_name = os.getenv("LOG_LEVEL", "info").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)sZ %(levelname)s %(name)s %(message)s",
+    )
+
+
+configure_logging()
+log = logging.getLogger("drone_ops")
+
+
+app = FastAPI(
+    title=APP_NAME,
+    version=APP_VERSION,
+    description="Read-only advisory tools for drone preflight checks (airspace, weather, TFRs).",
+)
 
 
 @app.get("/healthz")
@@ -47,17 +61,55 @@ def healthz() -> dict[str, Any]:
     return {"ok": True, "service": APP_NAME, "timestamp_utc": utc_now_iso()}
 
 
+@app.get("/version")
+def version() -> dict[str, Any]:
+    """
+    Useful for confirming which build is currently deployed on Render.
+    Render often provides commit metadata via environment variables, but names may vary.
+    """
+    git_commit = (
+        os.getenv("RENDER_GIT_COMMIT")
+        or os.getenv("GIT_COMMIT")
+        or os.getenv("COMMIT_SHA")
+        or os.getenv("SOURCE_VERSION")
+        or None
+    )
+    return {
+        "service": APP_NAME,
+        "version": APP_VERSION,
+        "git_commit": git_commit,
+        "timestamp_utc": utc_now_iso(),
+    }
+
+
 @app.middleware("http")
-async def add_request_id(request: Request, call_next):
+async def request_id_and_logging_middleware(request: Request, call_next):
     request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
     request.state.request_id = request_id
-    response = await call_next(request)
-    response.headers["x-request-id"] = request_id
-    return response
+
+    start = time.perf_counter()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        duration_ms = int((time.perf_counter() - start) * 1000)
+        # Log one line per request (great for Render Logs and review debugging)
+        log.info(
+            "request method=%s path=%s status=%s duration_ms=%s request_id=%s client=%s",
+            request.method,
+            request.url.path,
+            status_code,
+            duration_ms,
+            request_id,
+            request.client.host if request.client else None,
+        )
 
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
+    log.exception("unhandled exception request_id=%s", getattr(request.state, "request_id", None))
     return JSONResponse(
         status_code=500,
         content={
