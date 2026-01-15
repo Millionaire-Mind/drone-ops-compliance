@@ -1,0 +1,283 @@
+openapi: 3.0.3
+info:
+  title: Drone Ops & Compliance
+  version: "0.6.0"
+  description: >
+    Read-only advisory tools for drone preflight checks in the United States.
+    Provides airspace, weather, TFR checks, and a consolidated preflight checklist.
+servers:
+  - url: https://drone-ops-compliance.onrender.com
+
+paths:
+  /tools/check_airspace:
+    post:
+      operationId: check_airspace
+      summary: Check airspace and authorization requirements (advisory).
+      description: >
+        Determines airspace context and whether authorization is likely required
+        (often via LAANC). This is advisory only and not an authorization to fly.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckAirspaceInput"
+      responses:
+        "200":
+          description: ToolResponse containing airspace advisory.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResponse"
+
+  /tools/analyze_weather_conditions:
+    post:
+      operationId: analyze_weather_conditions
+      summary: Retrieve and assess current weather conditions (advisory).
+      description: >
+        Retrieves latest NOAA/NWS observation near the provided location and provides
+        an advisory Part 107-style assessment of visibility and cloud ceiling fields when available.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalyzeWeatherInput"
+      responses:
+        "200":
+          description: ToolResponse containing weather advisory.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResponse"
+
+  /tools/check_tfrs:
+    post:
+      operationId: check_tfrs
+      summary: Check for active FAA Temporary Flight Restrictions (TFRs) (advisory).
+      description: >
+        Fetches FAA TFR list and applies a state-level relevance filter (V1).
+        Always advise user to verify exact boundaries and timing via authoritative sources.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckTfrsInput"
+      responses:
+        "200":
+          description: ToolResponse containing TFR advisory.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResponse"
+
+  /tools/generate_preflight_checklist:
+    post:
+      operationId: generate_preflight_checklist
+      summary: Combine checks into a single go/no-go style checklist (advisory).
+      description: >
+        Combines prior tool outputs into a consolidated preflight checklist.
+        Produces GO / GO_WITH_CONDITIONS / NO_GO style guidance with safety disclaimers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateChecklistInput"
+      responses:
+        "200":
+          description: ToolResponse containing consolidated checklist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResponse"
+
+  /tools/generate_laanc_links:
+    post:
+      operationId: generate_laanc_links
+      summary: Provide LAANC provider links and copy/paste flight details (no submission).
+      description: >
+        Generates provider links and a copy/paste block of flight details.
+        This tool does NOT submit LAANC requests. User must complete authorization via provider.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateLaancLinksInput"
+      responses:
+        "200":
+          description: ToolResponse containing LAANC links and instructions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResponse"
+
+  /healthz:
+    get:
+      operationId: healthz
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /version:
+    get:
+      operationId: version
+      summary: Version and deploy metadata
+      responses:
+        "200":
+          description: Version metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+components:
+  schemas:
+    CheckAirspaceInput:
+      type: object
+      additionalProperties: false
+      required: [latitude, longitude, altitude_ft_agl, flight_datetime]
+      properties:
+        latitude:
+          type: number
+          description: Latitude in decimal degrees
+          example: 37.7749
+        longitude:
+          type: number
+          description: Longitude in decimal degrees
+          example: -122.4194
+        altitude_ft_agl:
+          type: number
+          description: Planned altitude in feet AGL
+          example: 100
+        flight_datetime:
+          type: string
+          description: ISO 8601 datetime for planned flight (include timezone offset)
+          example: "2026-01-15T14:00:00-08:00"
+
+    AnalyzeWeatherInput:
+      type: object
+      additionalProperties: false
+      required: [latitude, longitude, flight_datetime]
+      properties:
+        latitude:
+          type: number
+          example: 37.7749
+        longitude:
+          type: number
+          example: -122.4194
+        flight_datetime:
+          type: string
+          description: ISO 8601 datetime for planned flight (include timezone offset)
+          example: "2026-01-15T14:00:00-08:00"
+
+    CheckTfrsInput:
+      type: object
+      additionalProperties: false
+      required: [latitude, longitude, radius_nm, flight_datetime]
+      properties:
+        latitude:
+          type: number
+          example: 37.7749
+        longitude:
+          type: number
+          example: -122.4194
+        radius_nm:
+          type: number
+          description: Search radius in nautical miles (accepted but not applied in V1 relevance logic)
+          example: 5
+        flight_datetime:
+          type: string
+          description: ISO 8601 datetime for planned flight (include timezone offset)
+          example: "2026-01-15T14:00:00-08:00"
+
+    GenerateChecklistInput:
+      type: object
+      additionalProperties: false
+      required: [mission_type, airspace_data, weather_data, tfr_data]
+      properties:
+        mission_type:
+          type: string
+          description: Type of drone operation
+          enum: [recreational, part107_commercial, public_safety, educational]
+        airspace_data:
+          type: object
+          description: Result object from check_airspace (ToolResponse.result)
+          additionalProperties: true
+        weather_data:
+          type: object
+          description: Result object from analyze_weather_conditions (ToolResponse.result)
+          additionalProperties: true
+        tfr_data:
+          type: object
+          description: Result object from check_tfrs (ToolResponse.result)
+          additionalProperties: true
+
+    GenerateLaancLinksInput:
+      type: object
+      additionalProperties: false
+      required: [latitude, longitude, altitude_ft_agl, start_datetime, duration_minutes]
+      properties:
+        latitude:
+          type: number
+          example: 37.7749
+        longitude:
+          type: number
+          example: -122.4194
+        altitude_ft_agl:
+          type: number
+          example: 100
+        start_datetime:
+          type: string
+          description: ISO 8601 start time (include timezone offset)
+          example: "2026-01-15T14:00:00-08:00"
+        duration_minutes:
+          type: integer
+          minimum: 1
+          maximum: 720
+          example: 30
+        operation_description:
+          type: string
+          nullable: true
+          example: "Recreational flight for photography"
+
+    ToolMeta:
+      type: object
+      additionalProperties: true
+      properties:
+        data_timestamp_utc:
+          type: string
+        sources:
+          type: array
+          items:
+            type: string
+        coverage:
+          type: object
+          additionalProperties: true
+        errors:
+          type: array
+          items:
+            type: string
+        request_id:
+          type: string
+          nullable: true
+
+    ToolResponse:
+      type: object
+      additionalProperties: false
+      required: [result, meta]
+      properties:
+        result:
+          type: object
+          additionalProperties: true
+        meta:
+          $ref: "#/components/schemas/ToolMeta"
