@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg-info/
+.venv/
+venv/
+ENV/
+env/
+
+# FastAPI / Uvicorn
+*.log
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Node (if you add later)
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Coverage / test artifacts
+.coverage
+htmlcov/
+.pytest_cache/
