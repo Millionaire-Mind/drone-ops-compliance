@@ -243,7 +243,12 @@ def classify_by_airport_proximity(
     # Within the airspace
     airspace_class = f"Class {airport.airspace_class}"
     laanc_required = True  # All B, C, D require authorization
-    ceiling_ft = airport.ceiling_ft
+    
+    # IMPORTANT: Don't return hardcoded ceilings for Class B/C
+    # LAANC ceilings vary by exact grid location (0-400ft typical)
+    # Users must check with FAA-approved LAANC provider
+    ceiling_ft = None  # Force users to verify via LAANC provider
+    
     facility_name = airport.name
     
     return (airspace_class, laanc_required, ceiling_ft, facility_name, distance_nm)
