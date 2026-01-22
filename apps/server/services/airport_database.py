@@ -49,7 +49,6 @@ AIRPORTS = [
     Airport("KMDW", "Chicago Midway", 41.7868, -87.7522, "B", 30, 8000),
     Airport("KSAN", "San Diego International", 32.7336, -117.1897, "B", 30, 10000),
     Airport("KTPA", "Tampa International", 27.9755, -82.5332, "B", 30, 10000),
-    Airport("KPDX", "Portland International", 45.5887, -122.5975, "B", 30, 9000),
     Airport("KHOU", "Houston Hobby", 29.6454, -95.2789, "B", 30, 8000),
     Airport("KCVG", "Cincinnati/Northern Kentucky", 39.0488, -84.6678, "B", 30, 10000),
     Airport("KMEM", "Memphis International", 35.0424, -89.9767, "B", 30, 9000),
@@ -72,7 +71,6 @@ AIRPORTS = [
     Airport("KPDX", "Portland International", 45.5887, -122.5975, "C", 10, 4000),
     Airport("KAUS", "Austin-Bergstrom", 30.1945, -97.6699, "C", 10, 4000),
     Airport("KSAT", "San Antonio International", 29.5337, -98.4698, "C", 10, 4000),
-    Airport("KOAK", "Metropolitan Oakland", 37.7213, -122.2208, "C", 10, 4000),
     Airport("KRNO", "Reno-Tahoe International", 39.4991, -119.7681, "C", 10, 4000),
     
     # Mountain States
@@ -102,7 +100,7 @@ AIRPORTS = [
     Airport("KSAV", "Savannah/Hilton Head", 32.1276, -81.2021, "C", 10, 4000),
     Airport("KBHM", "Birmingham-Shuttlesworth", 33.5629, -86.7535, "C", 10, 4000),
     Airport("KMSY", "New Orleans Louis Armstrong", 29.9934, -90.2580, "C", 10, 4000),
-    Airport("Krsw", "Southwest Florida International", 26.5362, -81.7552, "C", 10, 4000),
+    Airport("KRSW", "Southwest Florida International", 26.5362, -81.7552, "C", 10, 4000),
     Airport("KFLL", "Fort Lauderdale-Hollywood", 26.0726, -80.1527, "C", 10, 4000),
     Airport("KJAX", "Jacksonville International", 30.4941, -81.6879, "C", 10, 4000),
     Airport("KPNS", "Pensacola International", 30.4734, -87.1866, "C", 10, 4000),
@@ -232,13 +230,15 @@ def classify_by_airport_proximity(
     airport = find_nearest_airport(latitude, longitude, max_distance_nm=15)
     
     if not airport:
-        return (None, None, None, None, None)
+        # No controlled airport within 15nm - likely Class G (uncontrolled)
+        return ("Class G", False, None, "Uncontrolled airspace (no nearby airports)", None)
     
     distance_nm = haversine_nm(latitude, longitude, airport.lat, airport.lon)
     
     # Check if within airspace radius
     if distance_nm > airport.radius_nm:
-        return (None, None, None, None, distance_nm)
+        # Outside the controlled airspace - likely Class G or E
+        return ("Class G", False, None, "Uncontrolled airspace (outside controlled zones)", distance_nm)
     
     # Within the airspace
     airspace_class = f"Class {airport.airspace_class}"
