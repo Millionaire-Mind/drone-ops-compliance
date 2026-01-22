@@ -1,3 +1,4 @@
+from .airport_database import classify_by_airport_proximity
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -255,6 +256,31 @@ async def analyze_airspace(latitude: float, longitude: float, altitude_ft_agl: f
     if laanc_required is None and _name_implies_controlled(airspace_name):
         laanc_required = True
         debug["fallback_used"] = "mode_c_name"
+
+    # 4b) Airport proximity fallback (if still unknown)
+    if laanc_required is None or class_letter is None:
+        (
+            prox_class,
+            prox_laanc_req,
+            prox_ceiling,
+            prox_facility,
+            prox_distance_nm,
+        ) = classify_by_airport_proximity(latitude, longitude, altitude_ft_agl)
+        
+        if prox_class is not None:
+            if class_letter is None:
+                airspace_class = prox_class
+                class_letter = prox_class.replace("Class ", "")  # Extract letter
+            if laanc_required is None:
+                laanc_required = prox_laanc_req
+            if uasfm_ceiling is None:
+                uasfm_ceiling = prox_ceiling
+            if facility is None:
+                facility = prox_facility
+            
+            debug["fallback_used"] = "airport_proximity"
+            debug["airport_proximity_distance_nm"] = round(prox_distance_nm, 2) if prox_distance_nm else None
+            debug["airport_proximity_facility"] = prox_facility
 
     # 5) Display class string
     if class_letter:
