@@ -1,4 +1,3 @@
-from .airport_database import classify_by_airport_proximity
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,6 +5,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
+
+from .airport_database import classify_by_airport_proximity
 
 DEFAULT_UA = "drone-ops-compliance/0.1 (contact: replace-before-prod)"
 
