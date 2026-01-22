@@ -115,11 +115,20 @@ def _extract_uasfm_ceiling(attrs: dict[str, Any]) -> int | None:
     for key in ["CEILING", "CEILING_FT", "MAX_ALT", "MAX_ALT_FT"]:
         val = attrs.get(key)
         if isinstance(val, int):
-            return val
-        if isinstance(val, float):
-            return int(val)
+            ceiling = val
+        elif isinstance(val, float):
+            ceiling = int(val)
+        else:
+            continue
+        
+        # Sanity check: UASFM ceilings should be 0-500ft typically
+        # If >1000ft, it's likely wrong data (aviation altitude, not UAS ceiling)
+        if ceiling > 1000:
+            return None
+        
+        return ceiling
+    
     return None
-
 
 def _extract_laanc_available_from_uasfm(attrs: dict[str, Any]) -> bool | None:
     found_any = False
