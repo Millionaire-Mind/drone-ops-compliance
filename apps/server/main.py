@@ -27,6 +27,8 @@ from apps.server.services.faa_tfr import (
 )
 from apps.server.services.nws_weather import fetch_latest_observation_by_latlon, part107_compliance_assessment
 from packages.core.rules import decide_preflight
+from apps.server.config import supabase  # ← ADDED
+from packages.core.logging import log_advisory_snapshot  # ← ADDED
 
 APP_NAME = "Drone Ops & Compliance Tool Server"
 APP_VERSION = "0.6.0"
@@ -351,6 +353,37 @@ def generate_preflight_checklist(payload: GenerateChecklistInput, request: Reque
         errors=[],
         request_id=getattr(request.state, "request_id", None),
     )
+    
+    # ← ADDED: Log advisory snapshot (fire-and-forget)
+    # Extract location from airspace_data if available
+    coords = payload.airspace_data.get("coordinates", {})
+    lat = coords.get("lat")
+    lon = coords.get("lon")
+    
+    # Only log if we have valid coordinates
+    if lat is not None and lon is not None:
+        log_advisory_snapshot(
+            supabase_client=supabase,
+            location_lat=float(lat),
+            location_lon=float(lon),
+            altitude_ft=payload.airspace_data.get("altitude_ft_agl"),
+            mission_type=payload.mission_type,
+            advisory_result=decision.overall_status,
+            full_response={
+                "result": result,
+                "meta": meta.model_dump(),
+                "input": {
+                    "mission_type": payload.mission_type,
+                    "airspace_data": payload.airspace_data,
+                    "weather_data": payload.weather_data,
+                    "tfr_data": payload.tfr_data,
+                }
+            },
+            tool_version=APP_VERSION,
+            source="chatgpt",
+            user_id=None  # Anonymous for Phase 1
+        )
+    
     return ToolResponse(result=result, meta=meta)
 
 
@@ -390,7 +423,7 @@ def generate_laanc_links(payload: GenerateLaancLinksInput, request: Request):
         "next_steps": [
             "Open an FAA-approved LAANC provider (one of the links above).",
             "Enter the flight details (copy/paste block below).",
-            "Submit the authorization request in the provider app and wait for the provider’s response.",
+            "Submit the authorization request in the provider app and wait for the provider's response.",
         ],
         "copy_paste_flight_details": flight_details_block,
         "disclaimer": "This tool does not submit LAANC requests. It provides links and instructions only.",
