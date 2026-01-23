@@ -9,7 +9,7 @@ WORKDIR /app
 # Install runtime deps
 COPY pyproject.toml /app/pyproject.toml
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir fastapi uvicorn httpx pydantic
+    && pip install --no-cache-dir fastapi uvicorn httpx pydantic supabase
 
 # Copy app
 COPY . /app
