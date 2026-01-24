@@ -9,6 +9,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 
 from .models import (
     AnalyzeWeatherInput,
@@ -27,8 +28,8 @@ from apps.server.services.faa_tfr import (
 )
 from apps.server.services.nws_weather import fetch_latest_observation_by_latlon, part107_compliance_assessment
 from packages.core.rules import decide_preflight
-from apps.server.config import supabase  # ← ADDED
-from packages.core.logging import log_advisory_snapshot  # ← ADDED
+from apps.server.config import supabase
+from packages.core.logging import log_advisory_snapshot
 
 APP_NAME = "Drone Ops & Compliance Tool Server"
 APP_VERSION = "0.6.0"
@@ -56,6 +57,26 @@ app = FastAPI(
     version=APP_VERSION,
     description="Read-only advisory tools for drone preflight checks (airspace, weather, TFRs).",
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Log validation errors in detail to help debug ChatGPT payload issues"""
+    body = await request.body()
+    log.error(
+        "Validation error on %s - Body: %s - Errors: %s - RequestID: %s",
+        request.url.path,
+        body.decode('utf-8') if body else 'empty',
+        exc.errors(),
+        getattr(request.state, "request_id", None)
+    )
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": exc.errors(),
+            "body": body.decode('utf-8') if body else None,
+        },
+    )
 
 
 @app.get("/healthz")
@@ -354,7 +375,6 @@ def generate_preflight_checklist(payload: GenerateChecklistInput, request: Reque
         request_id=getattr(request.state, "request_id", None),
     )
     
-    # ← ADDED: Log advisory snapshot (fire-and-forget)
     # Extract location from airspace_data if available
     coords = payload.airspace_data.get("coordinates", {})
     lat = coords.get("lat")
@@ -381,7 +401,7 @@ def generate_preflight_checklist(payload: GenerateChecklistInput, request: Reque
             },
             tool_version=APP_VERSION,
             source="chatgpt",
-            user_id=None  # Anonymous for Phase 1
+            user_id=None
         )
     
     return ToolResponse(result=result, meta=meta)
