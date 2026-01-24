@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import logging
 import os
-import time
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime, UTC
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
 
 from .models import (
     AnalyzeWeatherInput,
@@ -21,62 +18,63 @@ from .models import (
     ToolResponse,
 )
 from apps.server.services.faa_airspace import analyze_airspace
-from apps.server.services.faa_tfr import (
-    determine_us_state_from_latlon,
-    fetch_tfr_list_json,
-    filter_tfrs_by_state,
-)
+from apps.server.services.faa_tfr import determine_us_state_from_latlon, fetch_tfr_list_json, filter_tfrs_by_state
 from apps.server.services.nws_weather import fetch_latest_observation_by_latlon, part107_compliance_assessment
 from packages.core.rules import decide_preflight
-from apps.server.config import supabase
-from packages.core.logging import log_advisory_snapshot
 
-APP_NAME = "Drone Ops & Compliance Tool Server"
-APP_VERSION = "0.6.0"
+# Optional: Supabase logging (Phase 1 advisory snapshots)
+_SUPABASE_URL = os.getenv("SUPABASE_URL")
+_SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SERVICE_KEY")
+_SUPABASE_TABLE = os.getenv("SUPABASE_TABLE", "advisory_snapshots")
+
+_supabase_client = None
 
 
 def utc_now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
-def configure_logging() -> None:
-    level_name = os.getenv("LOG_LEVEL", "info").upper()
-    level = getattr(logging, level_name, logging.INFO)
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)sZ %(levelname)s %(name)s %(message)s",
-    )
+def _get_supabase():
+    global _supabase_client
+    if _supabase_client is not None:
+        return _supabase_client
+    if not _SUPABASE_URL or not _SUPABASE_SERVICE_KEY:
+        return None
+    try:
+        from supabase import create_client  # type: ignore
+
+        _supabase_client = create_client(_SUPABASE_URL, _SUPABASE_SERVICE_KEY)
+        return _supabase_client
+    except Exception:
+        return None
 
 
-configure_logging()
-log = logging.getLogger("drone_ops")
+async def _log_advisory_snapshot(payload: dict[str, Any]) -> str | None:
+    """
+    Best-effort logging. Must never break the advisory response.
+    Returns snapshot_id (if inserted) or None.
+    """
+    sb = _get_supabase()
+    if sb is None:
+        return None
+
+    try:
+        # Note: keep naming neutral: "advisory snapshot" not "flight log".
+        resp = sb.table(_SUPABASE_TABLE).insert(payload).execute()
+        # supabase-py returns .data list on success
+        if getattr(resp, "data", None) and isinstance(resp.data, list) and resp.data:
+            inserted = resp.data[0]
+            return inserted.get("id") or inserted.get("request_id")
+        return None
+    except Exception:
+        return None
 
 
-app = FastAPI(
-    title=APP_NAME,
-    version=APP_VERSION,
-    description="Read-only advisory tools for drone preflight checks (airspace, weather, TFRs).",
-)
+APP_NAME = "Drone Ops & Compliance Tool Server"
+VERSION = os.getenv("APP_VERSION", "0.6.0")
+GIT_COMMIT = os.getenv("GIT_COMMIT", "unknown")
 
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Log validation errors in detail to help debug ChatGPT payload issues"""
-    body = await request.body()
-    log.error(
-        "Validation error on %s - Body: %s - Errors: %s - RequestID: %s",
-        request.url.path,
-        body.decode('utf-8') if body else 'empty',
-        exc.errors(),
-        getattr(request.state, "request_id", None)
-    )
-    return JSONResponse(
-        status_code=422,
-        content={
-            "detail": exc.errors(),
-            "body": body.decode('utf-8') if body else None,
-        },
-    )
+app = FastAPI(title=APP_NAME, version=VERSION)
 
 
 @app.get("/healthz")
@@ -86,279 +84,152 @@ def healthz() -> dict[str, Any]:
 
 @app.get("/version")
 def version() -> dict[str, Any]:
-    """
-    Useful for confirming which build is currently deployed on Render.
-    Render often provides commit metadata via environment variables, but names may vary.
-    """
-    git_commit = (
-        os.getenv("RENDER_GIT_COMMIT")
-        or os.getenv("GIT_COMMIT")
-        or os.getenv("COMMIT_SHA")
-        or os.getenv("SOURCE_VERSION")
-        or None
+    return {"service": APP_NAME, "version": VERSION, "git_commit": GIT_COMMIT, "timestamp_utc": utc_now_iso()}
+
+
+def _tool_meta(sources: list[str], coverage: dict[str, str] | None = None, errors: list[str] | None = None, request_id: str | None = None) -> ToolMeta:
+    return ToolMeta(
+        data_timestamp_utc=utc_now_iso(),
+        sources=sources,
+        coverage=coverage or {},
+        errors=errors or [],
+        request_id=request_id,
     )
-    return {
-        "service": APP_NAME,
-        "version": APP_VERSION,
-        "git_commit": git_commit,
-        "timestamp_utc": utc_now_iso(),
-    }
-
-
-@app.middleware("http")
-async def request_id_and_logging_middleware(request: Request, call_next):
-    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
-    request.state.request_id = request_id
-
-    start = time.perf_counter()
-    status_code = 500
-    try:
-        response = await call_next(request)
-        status_code = response.status_code
-        return response
-    finally:
-        duration_ms = int((time.perf_counter() - start) * 1000)
-        # Log one line per request (great for Render Logs and review debugging)
-        log.info(
-            "request method=%s path=%s status=%s duration_ms=%s request_id=%s client=%s",
-            request.method,
-            request.url.path,
-            status_code,
-            duration_ms,
-            request_id,
-            request.client.host if request.client else None,
-        )
 
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    log.exception("unhandled exception request_id=%s", getattr(request.state, "request_id", None))
+    # Conservative: never leak stack traces to the client.
     return JSONResponse(
         status_code=500,
         content={
-            "result": {},
-            "meta": {
-                "data_timestamp_utc": utc_now_iso(),
-                "sources": [],
-                "coverage": {},
-                "errors": ["Internal error"],
-                "request_id": getattr(request.state, "request_id", None),
-            },
+            "result": {"status": "ERROR", "message": "Internal error"},
+            "meta": _tool_meta(
+                sources=["server"],
+                coverage={"exception": "unhandled"},
+                errors=[str(exc)],
+                request_id=None,
+            ).model_dump(),
         },
     )
 
 
-# ----------------------------
-# TOOL: check_airspace
-# ----------------------------
 @app.post("/tools/check_airspace", response_model=ToolResponse)
-async def check_airspace(payload: CheckAirspaceInput, request: Request):
-    try:
-        analysis = await analyze_airspace(
-            latitude=payload.latitude,
-            longitude=payload.longitude,
-            altitude_ft_agl=payload.altitude_ft_agl,
-        )
-
-        if analysis.laanc_required is True:
-            status = "AUTHORIZATION_REQUIRED"
-        elif analysis.laanc_required is False:
-            status = "CLEAR"
-        else:
-            status = "UNKNOWN"
-
-        result = {
-            "airspace_class": analysis.airspace_class,
-            "facility": analysis.facility,
-            "laanc_required": analysis.laanc_required,
-            "laanc_available": analysis.laanc_available,
-            "max_altitude_ft": analysis.max_altitude_ft,
-            "restrictions": analysis.restrictions,
-            "coordinates": {"lat": payload.latitude, "lon": payload.longitude},
-            "status": status,
-        }
-
-        meta = ToolMeta(
-            sources=[
-                "FAA UAS Data Delivery System (ArcGIS) - Class_Airspace",
-                "FAA UAS Data Delivery System (ArcGIS) - UAS Facility Map Data (UASFM)",
-            ],
-            coverage={
-                "airspace_class_method": "faa_class_airspace_polygon_intersects_point",
-                "uasfm_method": "faa_uasfm_polygon_intersects_point_or_distance_fallback",
-                "debug_class_features_count": str(analysis.debug.get("class_features_count")),
-                "debug_uasfm_features_count": str(analysis.debug.get("uasfm_features_count")),
-                "debug_class_letter_found": str(analysis.debug.get("class_letter_found")),
-                "debug_fallback_used": str(analysis.debug.get("fallback_used")),
-                "debug_uasfm_query_mode": str(analysis.debug.get("uasfm_query_mode")),
-            },
+async def tool_check_airspace(inp: CheckAirspaceInput) -> ToolResponse:
+    request_id = str(uuid.uuid4())
+    res = await analyze_airspace(inp.latitude, inp.longitude, inp.altitude_ft_agl)
+    return ToolResponse(
+        result={
+            "airspace_class": res.airspace_class,
+            "facility": res.facility or res.airspace_name,
+            "laanc_required": res.laanc_required,
+            "laanc_available": res.laanc_available,
+            "max_altitude_ft": res.max_altitude_ft,
+            "restrictions": res.restrictions,
+            "coordinates": {"lat": inp.latitude, "lon": inp.longitude},
+            "status": "AUTHORIZATION_REQUIRED" if res.laanc_required else ("CLEAR" if res.laanc_required is False else "UNKNOWN"),
+        },
+        meta=_tool_meta(
+            sources=["FAA UAS Data Delivery System (ArcGIS) - Class_Airspace", "FAA UAS Data Delivery System (ArcGIS) - UAS Facility Map Data (UASFM)"],
+            coverage={"airspace": "best_effort"},
             errors=[],
-            request_id=getattr(request.state, "request_id", None),
-        )
-        return ToolResponse(result=result, meta=meta)
-
-    except Exception as e:
-        result = {
-            "airspace_class": "Unknown",
-            "facility": None,
-            "laanc_required": None,
-            "laanc_available": None,
-            "max_altitude_ft": None,
-            "restrictions": ["Airspace lookup failed; verify in an FAA-approved provider app before flight."],
-            "coordinates": {"lat": payload.latitude, "lon": payload.longitude},
-            "status": "UNKNOWN",
-        }
-        meta = ToolMeta(
-            sources=[
-                "FAA UAS Data Delivery System (ArcGIS) - Class_Airspace",
-                "FAA UAS Data Delivery System (ArcGIS) - UAS Facility Map Data (UASFM)",
-            ],
-            coverage={"airspace": "attempted"},
-            errors=[str(e)],
-            request_id=getattr(request.state, "request_id", None),
-        )
-        return ToolResponse(result=result, meta=meta)
+            request_id=request_id,
+        ),
+    )
 
 
-# ----------------------------
-# TOOL: analyze_weather_conditions
-# ----------------------------
 @app.post("/tools/analyze_weather_conditions", response_model=ToolResponse)
-async def analyze_weather_conditions(payload: AnalyzeWeatherInput, request: Request):
-    try:
-        parsed, debug = await fetch_latest_observation_by_latlon(payload.latitude, payload.longitude)
-
-        compliance = part107_compliance_assessment(
-            visibility_sm=parsed.get("visibility_sm"),
-            cloud_ceiling_ft=parsed.get("cloud_ceiling_ft"),
-        )
-
-        result = {
-            "current_conditions": {
-                "wind_speed_kt": parsed.get("wind_speed_kt"),
-                "wind_gust_kt": parsed.get("wind_gust_kt"),
-                "wind_direction_deg": parsed.get("wind_direction_deg"),
-                "visibility_sm": parsed.get("visibility_sm"),
-                "cloud_ceiling_ft": parsed.get("cloud_ceiling_ft"),
-                "temperature_f": parsed.get("temperature_f"),
-                "conditions": parsed.get("conditions"),
-                "timestamp": parsed.get("timestamp"),
-                "raw_source": parsed.get("raw"),
-            },
+async def tool_weather(inp: AnalyzeWeatherInput) -> ToolResponse:
+    request_id = str(uuid.uuid4())
+    current, meta = await fetch_latest_observation_by_latlon(inp.latitude, inp.longitude)
+    compliance = part107_compliance_assessment(
+        visibility_sm=current.get("visibility_sm"),
+        cloud_ceiling_ft=current.get("cloud_ceiling_ft"),
+    )
+    return ToolResponse(
+        result={
+            "current_conditions": current,
             "part107_compliance": compliance,
-            "station_id": parsed.get("raw", {}).get("nws_station_id"),
-        }
-
-        meta = ToolMeta(
+            "station_id": current.get("raw_source", {}).get("nws_station_id"),
+        },
+        meta=_tool_meta(
             sources=["NOAA/NWS API (api.weather.gov)"],
-            coverage={
-                "weather": "latest_observation",
-                "station_selection": "best_of_nearest_stations",
-                "selected_station_id": str(debug.get("selected_station_id")),
-                "stations_attempted": ", ".join(debug.get("stations_attempted", [])),
-                "selected_score": str(debug.get("selected_score")),
-            },
+            coverage=meta,
             errors=[],
-            request_id=getattr(request.state, "request_id", None),
-        )
-        return ToolResponse(result=result, meta=meta)
-
-    except Exception as e:
-        meta = ToolMeta(
-            sources=["NOAA/NWS API (api.weather.gov)"],
-            coverage={"weather": "attempted"},
-            errors=[str(e)],
-            request_id=getattr(request.state, "request_id", None),
-        )
-        result = {
-            "current_conditions": None,
-            "part107_compliance": {
-                "visibility_ok": None,
-                "cloud_clearance_ok": None,
-                "overall_status": "UNKNOWN",
-                "notes": ["Weather lookup failed; verify manually before flight."],
-            },
-            "station_id": None,
-        }
-        return ToolResponse(result=result, meta=meta)
+            request_id=request_id,
+        ),
+    )
 
 
-# ----------------------------
-# TOOL: check_tfrs
-# ----------------------------
 @app.post("/tools/check_tfrs", response_model=ToolResponse)
-async def check_tfrs(payload: CheckTfrsInput, request: Request):
+async def tool_tfrs(inp: CheckTfrsInput) -> ToolResponse:
+    request_id = str(uuid.uuid4())
+    errors: list[str] = []
+    coverage: dict[str, str] = {"tfr": "attempted"}
+
+    state = None
     try:
-        state = await determine_us_state_from_latlon(payload.latitude, payload.longitude)
-        tfr_list = await fetch_tfr_list_json()
-        matches = filter_tfrs_by_state(tfr_list, state)
+        state = await determine_us_state_from_latlon(inp.latitude, inp.longitude)
+    except Exception as e:
+        errors.append(str(e))
 
-        status = "CLEAR" if len(matches) == 0 else "RESTRICTED"
+    tfrs: list[dict[str, Any]] = []
+    status = "UNKNOWN"
+    advisory = "TFR lookup failed. Verify manually at tfr.faa.gov before flight."
 
-        result = {
-            "query": {
-                "latitude": payload.latitude,
-                "longitude": payload.longitude,
-                "radius_nm_requested": payload.radius_nm,
-                "flight_datetime": payload.flight_datetime,
-            },
-            "relevance_method": "STATE_FILTER_ONLY",
-            "state": state,
-            "active_tfrs": matches,
-            "tfr_count": len(matches),
-            "status": status,
-            "advisory": (
-                "This check uses a state-level filter. Verify exact TFR boundaries and timing at tfr.faa.gov "
-                "or an FAA-approved provider before flight."
-            ),
-        }
-
-        meta = ToolMeta(
-            sources=["FAA TFR (tfr.faa.gov export/json)", "NOAA/NWS points API (api.weather.gov)"],
-            coverage={
+    if state:
+        try:
+            full = await fetch_tfr_list_json()
+            tfrs = filter_tfrs_by_state(full, state)
+            status = "CLEAR" if len(tfrs) == 0 else "UNKNOWN"
+            advisory = (
+                "This check uses a state-level filter. Verify exact TFR boundaries and timing at tfr.faa.gov or an FAA-approved provider before flight."
+            )
+            coverage = {
                 "tfr": "faa_export_json",
                 "relevance": "state_filter_only_no_geometry",
                 "radius_nm": "accepted_but_not_applied_in_v1",
-            },
-            errors=[],
-            request_id=getattr(request.state, "request_id", None),
-        )
-        return ToolResponse(result=result, meta=meta)
+            }
+        except Exception as e:
+            errors.append(str(e))
 
-    except Exception as e:
-        result = {
+    return ToolResponse(
+        result={
             "query": {
-                "latitude": payload.latitude,
-                "longitude": payload.longitude,
-                "radius_nm_requested": payload.radius_nm,
-                "flight_datetime": payload.flight_datetime,
+                "latitude": inp.latitude,
+                "longitude": inp.longitude,
+                "radius_nm_requested": float(inp.radius_nm or 5),
+                "flight_datetime": inp.flight_datetime,
             },
             "relevance_method": "STATE_FILTER_ONLY",
-            "state": None,
-            "active_tfrs": [],
-            "tfr_count": 0,
-            "status": "UNKNOWN",
-            "advisory": "TFR lookup failed. Verify manually at tfr.faa.gov before flight.",
-        }
-        meta = ToolMeta(
+            "state": state,
+            "active_tfrs": tfrs,
+            "tfr_count": len(tfrs),
+            "status": status,
+            "advisory": advisory,
+        },
+        meta=_tool_meta(
             sources=["FAA TFR (tfr.faa.gov export/json)", "NOAA/NWS points API (api.weather.gov)"],
-            coverage={"tfr": "attempted"},
-            errors=[str(e)],
-            request_id=getattr(request.state, "request_id", None),
-        )
-        return ToolResponse(result=result, meta=meta)
+            coverage=coverage,
+            errors=errors,
+            request_id=request_id,
+        ),
+    )
 
 
-# ----------------------------
-# TOOL: generate_preflight_checklist
-# ----------------------------
 @app.post("/tools/generate_preflight_checklist", response_model=ToolResponse)
-def generate_preflight_checklist(payload: GenerateChecklistInput, request: Request):
+async def tool_generate_checklist(inp: GenerateChecklistInput) -> ToolResponse:
+    """
+    IMPORTANT: Do NOT splat kwargs into decide_preflight.
+    Call explicitly to avoid UnrecognizedKwargsError.
+    """
+    request_id = str(uuid.uuid4())
+
     decision = decide_preflight(
-        mission_type=payload.mission_type,
-        airspace_data=payload.airspace_data,
-        weather_data=payload.weather_data,
-        tfr_data=payload.tfr_data,
+        mission_type=inp.mission_type,
+        airspace_data=inp.airspace_data,
+        weather_data=inp.weather_data,
+        tfr_data=inp.tfr_data,
     )
 
     result = {
@@ -368,90 +239,61 @@ def generate_preflight_checklist(payload: GenerateChecklistInput, request: Reque
         "rationale": decision.rationale,
         "disclaimers": decision.disclaimers,
     }
-    meta = ToolMeta(
-        sources=["Internal rules engine (packages/core/rules.py)"],
-        coverage={"checklist": "generated"},
-        errors=[],
-        request_id=getattr(request.state, "request_id", None),
-    )
-    
-    # Extract location from airspace_data if available
-    coords = payload.airspace_data.get("coordinates", {})
-    lat = coords.get("lat")
-    lon = coords.get("lon")
-    
-    # Only log if we have valid coordinates
-    if lat is not None and lon is not None:
-        log_advisory_snapshot(
-            supabase_client=supabase,
-            location_lat=float(lat),
-            location_lon=float(lon),
-            altitude_ft=payload.airspace_data.get("altitude_ft_agl"),
-            mission_type=payload.mission_type,
-            advisory_result=decision.overall_status,
-            full_response={
-                "result": result,
-                "meta": meta.model_dump(),
-                "input": {
-                    "mission_type": payload.mission_type,
-                    "airspace_data": payload.airspace_data,
-                    "weather_data": payload.weather_data,
-                    "tfr_data": payload.tfr_data,
-                }
-            },
-            tool_version=APP_VERSION,
-            source="chatgpt",
-            user_id=None
-        )
-    
-    return ToolResponse(result=result, meta=meta)
 
-
-# ----------------------------
-# TOOL: generate_laanc_links
-# ----------------------------
-@app.post("/tools/generate_laanc_links", response_model=ToolResponse)
-def generate_laanc_links(payload: GenerateLaancLinksInput, request: Request):
-    lat = payload.latitude
-    lon = payload.longitude
-    alt = payload.altitude_ft_agl
-
-    flight_details_block = (
-        f"Location: {lat:.6f}, {lon:.6f}\n"
-        f"Altitude: {alt:.0f} ft AGL\n"
-        f"Start: {payload.start_datetime}\n"
-        f"Duration: {payload.duration_minutes} minutes\n"
-        + (f"Notes: {payload.operation_description}\n" if payload.operation_description else "")
-    )
-
-    result = {
-        "flight_summary": {
-            "location": f"{lat:.6f}, {lon:.6f}",
-            "altitude_ft_agl": alt,
-            "start_datetime": payload.start_datetime,
-            "duration_minutes": payload.duration_minutes,
+    # Best-effort: log advisory snapshot to Supabase (should NOT break response)
+    snapshot_payload = {
+        "request_id": request_id,
+        "timestamp_utc": utc_now_iso(),
+        "mission_type": inp.mission_type,
+        "inputs": {
+            "airspace_data": inp.airspace_data,
+            "weather_data": inp.weather_data,
+            "tfr_data": inp.tfr_data,
         },
-        "providers": [
-            {"name": "Aloft Air Control", "url": "https://www.aloft.ai/air-control/", "primary": True},
-            {"name": "Airspace Link", "url": "https://airspacelink.com/", "primary": False},
-            {"name": "AirHub", "url": "https://www.airhub.com/", "primary": False},
-        ],
-        "prerequisites": [
-            {"item": "FAA registration (if required)", "required": True},
-            {"item": "Part 107 certificate (if commercial operation)", "required": False},
-        ],
-        "next_steps": [
-            "Open an FAA-approved LAANC provider (one of the links above).",
-            "Enter the flight details (copy/paste block below).",
-            "Submit the authorization request in the provider app and wait for the provider's response.",
-        ],
-        "copy_paste_flight_details": flight_details_block,
-        "disclaimer": "This tool does not submit LAANC requests. It provides links and instructions only.",
+        "result": result,
+        "tool_version": VERSION,
+        "source": "chatgpt_action",
     }
-    meta = ToolMeta(
-        sources=["Provider public websites (links only)"],
-        coverage={"laanc": "links_and_instructions_only"},
+
+    snapshot_id = await _log_advisory_snapshot(snapshot_payload)
+
+    meta = _tool_meta(
+        sources=["Internal rules engine (packages/core/rules.py)"],
+        coverage={"checklist": "generated", "supabase_snapshot": "inserted" if snapshot_id else "skipped_or_failed"},
         errors=[],
-        request_id=getattr(request.state, "request_id", None),
+        request_id=request_id,
     )
+
     return ToolResponse(result=result, meta=meta)
+
+
+@app.post("/tools/generate_laanc_deep_link", response_model=ToolResponse)
+async def tool_generate_laanc(inp: GenerateLaancLinksInput) -> ToolResponse:
+    request_id = str(uuid.uuid4())
+    # Phase 1: official FAA links only; no provider names.
+    return ToolResponse(
+        result={
+            "flight_summary": {
+                "location": f"{inp.latitude}°, {inp.longitude}°",
+                "altitude": f"{inp.altitude_ft_agl} feet AGL",
+                "start_time": inp.start_datetime,
+                "duration": f"{inp.duration_minutes} minutes",
+            },
+            "official_links": [
+                {"name": "FAA LAANC Program", "url": "https://www.faa.gov/uas/programs_partnerships/data_exchange/laanc"},
+                {"name": "FAA DroneZone", "url": "https://faadronezone-access.faa.gov/"},
+            ],
+            "next_steps": [
+                "1. Verify the location and altitude in an FAA-approved LAANC provider.",
+                "2. Request authorization for the planned time window (if eligible).",
+                "3. If LAANC is unavailable, submit a request via FAA DroneZone.",
+            ],
+            "disclaimer": "Advisory only; this does not submit any authorization request.",
+        },
+        meta=_tool_meta(
+            sources=["FAA public guidance (faa.gov)"],
+            coverage={"links": "official_only"},
+            errors=[],
+            request_id=request_id,
+        ),
+    )

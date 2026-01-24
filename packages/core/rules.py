@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
-Status = Literal["GO", "GO_WITH_CONDITIONS", "NO_GO", "INSUFFICIENT_DATA"]
+
+Status = Literal["GO", "GO_WITH_CONDITIONS", "NO_GO"]
 
 
 @dataclass
@@ -15,19 +16,12 @@ class Decision:
     disclaimers: list[str]
 
 
-DEFAULT_DISCLAIMERS = [
-    "Advisory only - not legal advice and not authorization to fly.",
-    "Verify requirements and obtain any needed authorizations (e.g., LAANC) via an FAA-approved provider.",
-    "If any data is missing or uncertain, do not fly until you verify with authoritative sources.",
-]
-
-
 def _get(d: dict[str, Any], path: list[str]) -> Any | None:
     cur: Any = d
     for p in path:
-        if not isinstance(cur, dict) or p not in cur:
+        if not isinstance(cur, dict):
             return None
-        cur = cur[p]
+        cur = cur.get(p)
     return cur
 
 
@@ -37,161 +31,75 @@ def decide_preflight(
     weather_data: dict[str, Any],
     tfr_data: dict[str, Any],
 ) -> Decision:
+    """
+    Phase 1: conservative advisory decision support.
+
+    IMPORTANT:
+    - Advisory only; never claims authorization.
+    - If anything critical is missing/unknown, downgrade to GO_WITH_CONDITIONS or NO_GO.
+    """
+
     required_actions: list[str] = []
     checklist: list[dict[str, Any]] = []
     rationale: list[str] = []
 
-    # -------------------------
-    # Data completeness checks
-    # -------------------------
-    if not airspace_data or not weather_data or not tfr_data:
-        return Decision(
-            overall_status="INSUFFICIENT_DATA",
-            required_actions=[
-                "Re-run checks; if still unavailable, verify manually using authoritative sources."
-            ],
-            checklist_items=[
-                {
-                    "category": "System",
-                    "item": "Critical data missing (airspace/weather/TFR)",
-                    "required": True,
-                    "status": "ACTION_NEEDED",
-                }
-            ],
-            rationale=["One or more critical data inputs were missing."],
-            disclaimers=DEFAULT_DISCLAIMERS,
-        )
+    disclaimers = [
+        "Advisory only - not legal advice and not authorization to fly.",
+        "Verify requirements and obtain any needed authorizations (e.g., LAANC) via an FAA-approved provider.",
+        "If any data is missing or uncertain, do not fly until you verify with authoritative sources.",
+    ]
 
     # -------------------------
-    # TFR check: hard NO-GO if RESTRICTED or UNKNOWN
+    # TFR assessment (coarse)
     # -------------------------
-    tfr_status = tfr_data.get("status")  # CLEAR | RESTRICTED | UNKNOWN
-    tfr_count = int(tfr_data.get("tfr_count", 0) or 0)
-
-    if tfr_status == "UNKNOWN":
+    tfr_status = (tfr_data.get("status") or "UNKNOWN").upper()
+    if tfr_status == "CLEAR":
         checklist.append(
             {
                 "category": "Airspace",
-                "item": "TFR status unknown (lookup failed or incomplete)",
+                "item": "TFRs checked (no matches found by this checker)",
                 "required": True,
-                "status": "BLOCKING",
+                "status": "OK",
             }
         )
-        rationale.append("TFR status could not be verified. Fail-safe: do not fly until verified.")
-        return Decision(
-            overall_status="NO_GO",
-            required_actions=[
-                "Do not fly until you verify TFR status at tfr.faa.gov (and/or other authoritative sources)."
-            ],
-            checklist_items=checklist,
-            rationale=rationale,
-            disclaimers=DEFAULT_DISCLAIMERS,
-        )
-
-    if tfr_status == "RESTRICTED" or tfr_count > 0:
+    elif tfr_status == "DO_NOT_FLY":
         checklist.append(
             {
                 "category": "Airspace",
-                "item": f"Potentially active/relevant TFR(s) detected: {tfr_count}",
-                "required": True,
-                "status": "BLOCKING",
-            }
-        )
-        rationale.append("TFRs were detected as potentially relevant for the planned area/time.")
-        return Decision(
-            overall_status="NO_GO",
-            required_actions=[
-                "Do not fly. Verify exact boundaries/times at tfr.faa.gov and reschedule or relocate."
-            ],
-            checklist_items=checklist,
-            rationale=rationale,
-            disclaimers=DEFAULT_DISCLAIMERS,
-        )
-
-    checklist.append(
-        {
-            "category": "Airspace",
-            "item": "TFRs checked (no matches found by this checker)",
-            "required": True,
-            "status": "OK",
-        }
-    )
-
-    # -------------------------
-    # Weather checks (Part 107-style)
-    # Conservative + transparent:
-    # If unknown, proceed with conditions rather than hard GO.
-    # -------------------------
-    vis_ok = _get(weather_data, ["part107_compliance", "visibility_ok"])
-    cloud_ok = _get(weather_data, ["part107_compliance", "cloud_clearance_ok"])
-
-    if vis_ok is False:
-        checklist.append(
-            {
-                "category": "Weather",
-                "item": "Visibility below minimum threshold used by this checker",
-                "required": True,
-                "status": "BLOCKING",
-            }
-        )
-        rationale.append("Visibility check failed based on available observation data.")
-        return Decision(
-            overall_status="NO_GO",
-            required_actions=["Do not fly until visibility meets requirements and conditions improve."],
-            checklist_items=checklist,
-            rationale=rationale,
-            disclaimers=DEFAULT_DISCLAIMERS,
-        )
-
-    if cloud_ok is False:
-        checklist.append(
-            {
-                "category": "Weather",
-                "item": "Cloud clearance/ceiling check failed based on available observation data",
-                "required": True,
-                "status": "BLOCKING",
-            }
-        )
-        rationale.append("Cloud clearance/ceiling check failed based on available observation data.")
-        return Decision(
-            overall_status="NO_GO",
-            required_actions=["Do not fly until cloud clearance/ceiling meets requirements."],
-            checklist_items=checklist,
-            rationale=rationale,
-            disclaimers=DEFAULT_DISCLAIMERS,
-        )
-
-    if vis_ok is None or cloud_ok is None:
-        checklist.append(
-            {
-                "category": "Weather",
-                "item": "Some weather fields were unavailable; verify locally before flight",
+                "item": "TFR indicates restriction in effect",
                 "required": True,
                 "status": "ACTION_NEEDED",
             }
         )
-        rationale.append("Some weather compliance checks are unknown due to missing observation fields.")
+        rationale.append("TFR restriction indicated. Do not fly until verified and resolved.")
+        required_actions.append("Verify TFR boundaries/timing via official FAA sources before any operation.")
+    else:
+        checklist.append(
+            {
+                "category": "Airspace",
+                "item": "TFR status unknown (verification required)",
+                "required": True,
+                "status": "UNKNOWN",
+            }
+        )
+        rationale.append("TFR status could not be determined reliably.")
 
     # -------------------------
-    # Airspace / LAANC logic
+    # Airspace / LAANC assessment
     # -------------------------
+    airspace_class = str(airspace_data.get("airspace_class") or "Unknown")
     laanc_required = airspace_data.get("laanc_required")
-    laanc_available = airspace_data.get("laanc_available")
-    airspace_class = airspace_data.get("airspace_class", "Unknown")
 
     checklist.append(
         {
             "category": "Airspace",
             "item": f"Airspace class: {airspace_class}",
             "required": True,
-            "status": "OK" if airspace_class != "Unknown" else "UNKNOWN",
+            "status": "OK" if airspace_class.lower() != "unknown" else "UNKNOWN",
         }
     )
 
     if laanc_required is True:
-        required_actions.append(
-            "Obtain LAANC authorization via an FAA-approved LAANC provider before flight."
-        )
         checklist.append(
             {
                 "category": "Regulatory",
@@ -200,31 +108,18 @@ def decide_preflight(
                 "status": "ACTION_NEEDED",
             }
         )
+        required_actions.append("Obtain LAANC authorization via an FAA-approved LAANC provider before flight.")
         rationale.append("Controlled airspace indicates authorization is required prior to flight.")
-
-        if laanc_available is False:
-            rationale.append("LAANC availability reported as unavailable.")
-            return Decision(
-                overall_status="NO_GO",
-                required_actions=required_actions
-                + ["LAANC not available via this checker; verify in provider app and/or relocate."],
-                checklist_items=checklist,
-                rationale=rationale,
-                disclaimers=DEFAULT_DISCLAIMERS,
-            )
-
-        return Decision(
-            overall_status="GO_WITH_CONDITIONS",
-            required_actions=required_actions,
-            checklist_items=checklist,
-            rationale=rationale,
-            disclaimers=DEFAULT_DISCLAIMERS,
+    elif laanc_required is False:
+        checklist.append(
+            {
+                "category": "Regulatory",
+                "item": "No LAANC authorization indicated by this checker",
+                "required": True,
+                "status": "OK",
+            }
         )
-
-    if laanc_required is None:
-        required_actions.append(
-            "LAANC requirement unclear; verify airspace status in an FAA-approved provider app before flight."
-        )
+    else:
         checklist.append(
             {
                 "category": "Regulatory",
@@ -233,21 +128,59 @@ def decide_preflight(
                 "status": "ACTION_NEEDED",
             }
         )
-        rationale.append("Airspace authorization requirement could not be determined from available data.")
-        return Decision(
-            overall_status="GO_WITH_CONDITIONS",
-            required_actions=required_actions,
-            checklist_items=checklist,
-            rationale=rationale,
-            disclaimers=DEFAULT_DISCLAIMERS,
+        required_actions.append(
+            "LAANC requirement unclear; verify airspace status in an FAA-approved provider before flight."
         )
+        rationale.append("Airspace authorization requirement could not be determined from available data.")
 
-    # If we reach here: no TFRs, weather not blocking, LAANC not required
-    rationale.append("No TFR matches found and weather checks did not indicate blocking conditions.")
+    # -------------------------
+    # Weather assessment (advisory)
+    # -------------------------
+    overall_wx = (weather_data.get("part107_compliance") or {}).get("overall_status") or "UNKNOWN"
+    overall_wx = str(overall_wx).upper()
+
+    if overall_wx == "GOOD":
+        checklist.append(
+            {"category": "Weather", "item": "Weather advisory check completed", "required": True, "status": "OK"}
+        )
+    elif overall_wx == "MARGINAL":
+        checklist.append(
+            {
+                "category": "Weather",
+                "item": "Weather appears marginal (verification required)",
+                "required": True,
+                "status": "ACTION_NEEDED",
+            }
+        )
+        rationale.append("Weather advisory indicates marginal conditions.")
+        required_actions.append("Verify weather at flight time using authoritative sources.")
+    else:
+        checklist.append(
+            {
+                "category": "Weather",
+                "item": "Weather status unknown (verification required)",
+                "required": True,
+                "status": "UNKNOWN",
+            }
+        )
+        rationale.append("Weather data was incomplete or could not be evaluated.")
+
+    # -------------------------
+    # Decide overall status (conservative)
+    # -------------------------
+    if tfr_status == "DO_NOT_FLY":
+        overall = "NO_GO"
+    elif "unknown" in [airspace_class.lower()] or laanc_required is None or overall_wx == "UNKNOWN" or tfr_status == "UNKNOWN":
+        overall = "GO_WITH_CONDITIONS"
+    else:
+        # Still conservative: if any ACTION_NEEDED exists, downgrade.
+        any_action_needed = any(item.get("status") == "ACTION_NEEDED" for item in checklist)
+        overall = "GO_WITH_CONDITIONS" if any_action_needed else "GO"
+
     return Decision(
-        overall_status="GO",
-        required_actions=["Proceed only if you maintain VLOS and comply with all applicable rules."],
+        overall_status=overall,
+        required_actions=required_actions,
         checklist_items=checklist,
         rationale=rationale,
-        disclaimers=DEFAULT_DISCLAIMERS,
+        disclaimers=disclaimers,
     )
