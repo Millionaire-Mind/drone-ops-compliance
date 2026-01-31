@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from .models import (
     AnalyzeWeatherInput,
@@ -75,6 +76,19 @@ VERSION = os.getenv("APP_VERSION", "0.6.0")
 GIT_COMMIT = os.getenv("GIT_COMMIT", "unknown")
 
 app = FastAPI(title=APP_NAME, version=VERSION)
+
+# CORS configuration for direct API access (mobile apps, external clients)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",  # Local Next.js dev
+        "https://uasflightcheck.vercel.app",  # Production frontend (update with actual domain)
+        "https://uasflightcheck.io",  # Production domain (when registered)
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/healthz")
