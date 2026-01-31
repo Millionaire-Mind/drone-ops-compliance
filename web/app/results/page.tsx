@@ -51,21 +51,21 @@ function ResultsContent() {
 
         <div className={`mb-6 rounded-lg border-2 p-6 ${getStatusBadge(checklist.overall_status)}`}>
           <h2 className="text-2xl font-bold mb-2">Overall Status: {checklist.overall_status.replace(/_/g, ' ')}</h2>
-          <p className="text-sm">{checklist.rationale}</p>
+          {checklist.rationale && checklist.rationale.length > 0 && <p className="text-sm">{checklist.rationale.join(' ')}</p>}
         </div>
 
         <div className="space-y-6">
           <div className="rounded-lg border border-slate-200 bg-white p-6">
             <h3 className="text-xl font-semibold text-slate-900 mb-4">Airspace</h3>
             <div className="space-y-2 text-sm">
-              <p><span className="font-medium">Class:</span> {airspace.result.airspace_class || 'Unknown'}</p>
-              <p><span className="font-medium">Facility:</span> {airspace.result.facility || 'N/A'}</p>
-              <p><span className="font-medium">LAANC Required:</span> {airspace.result.laanc_required ? 'Yes' : airspace.result.laanc_required === false ? 'No' : 'Unknown'}</p>
-              {airspace.result.max_altitude_ft && <p><span className="font-medium">Max Altitude:</span> {airspace.result.max_altitude_ft} ft</p>}
-              {airspace.result.restrictions && airspace.result.restrictions.length > 0 && (
+              <p><span className="font-medium">Class:</span> {airspace.airspace_class || 'Unknown'}</p>
+              <p><span className="font-medium">Facility:</span> {airspace.facility || 'N/A'}</p>
+              <p><span className="font-medium">LAANC Required:</span> {airspace.laanc_required ? 'Yes' : airspace.laanc_required === false ? 'No' : 'Unknown'}</p>
+              {airspace.max_altitude_ft && <p><span className="font-medium">Max Altitude:</span> {airspace.max_altitude_ft} ft</p>}
+              {airspace.restrictions && airspace.restrictions.length > 0 && (
                 <div>
                   <p className="font-medium mt-3">Restrictions:</p>
-                  <ul className="list-disc pl-5 mt-1">{airspace.result.restrictions.map((r: string, i: number) => <li key={i}>{r}</li>)}</ul>
+                  <ul className="list-disc pl-5 mt-1">{airspace.restrictions.map((r: string, i: number) => <li key={i}>{r}</li>)}</ul>
                 </div>
               )}
             </div>
@@ -74,14 +74,15 @@ function ResultsContent() {
           <div className="rounded-lg border border-slate-200 bg-white p-6">
             <h3 className="text-xl font-semibold text-slate-900 mb-4">Weather</h3>
             <div className="space-y-2 text-sm">
-              <p><span className="font-medium">Visibility:</span> {weather.result.current_conditions.visibility_sm ? `${weather.result.current_conditions.visibility_sm} SM` : 'Unknown'}</p>
-              <p><span className="font-medium">Ceiling:</span> {weather.result.current_conditions.cloud_ceiling_ft ? `${weather.result.current_conditions.cloud_ceiling_ft} ft` : 'Unknown'}</p>
-              <p><span className="font-medium">Wind:</span> {weather.result.current_conditions.wind_speed_kt ? `${weather.result.current_conditions.wind_speed_kt} kt` : 'Unknown'}</p>
-              <p><span className="font-medium">Part 107 Compliance:</span> {weather.result.part107_compliance.compliant ? 'Yes' : weather.result.part107_compliance.compliant === false ? 'No' : 'Unknown'}</p>
-              {weather.result.part107_compliance.warnings && weather.result.part107_compliance.warnings.length > 0 && (
+              <p><span className="font-medium">Visibility:</span> {weather.current_conditions.visibility_sm ? `${weather.current_conditions.visibility_sm} SM` : 'Unknown'}</p>
+              <p><span className="font-medium">Ceiling:</span> {weather.current_conditions.cloud_ceiling_ft ? `${weather.current_conditions.cloud_ceiling_ft} ft` : 'Unknown'}</p>
+              <p><span className="font-medium">Wind:</span> {weather.current_conditions.wind_speed_kt ? `${weather.current_conditions.wind_speed_kt} kt` : 'Unknown'}</p>
+              {weather.current_conditions.wind_gust_kt && <p><span className="font-medium">Gusts:</span> {weather.current_conditions.wind_gust_kt} kt</p>}
+              <p><span className="font-medium">Part 107 Status:</span> {weather.part107_compliance.overall_status}</p>
+              {weather.part107_compliance.notes && weather.part107_compliance.notes.length > 0 && (
                 <div>
-                  <p className="font-medium mt-3 text-amber-900">Warnings:</p>
-                  <ul className="list-disc pl-5 mt-1 text-amber-900">{weather.result.part107_compliance.warnings.map((w: string, i: number) => <li key={i}>{w}</li>)}</ul>
+                  <p className="font-medium mt-3 text-slate-700">Notes:</p>
+                  <ul className="list-disc pl-5 mt-1 text-slate-600">{weather.part107_compliance.notes.map((n: string, i: number) => <li key={i}>{n}</li>)}</ul>
                 </div>
               )}
             </div>
@@ -90,9 +91,9 @@ function ResultsContent() {
           <div className="rounded-lg border border-slate-200 bg-white p-6">
             <h3 className="text-xl font-semibold text-slate-900 mb-4">Temporary Flight Restrictions (TFR)</h3>
             <div className="space-y-2 text-sm">
-              <p><span className="font-medium">Status:</span> {tfr.result.status}</p>
-              <p><span className="font-medium">Active TFRs in State:</span> {tfr.result.tfr_count}</p>
-              <p className="text-amber-900 mt-3">{tfr.result.advisory}</p>
+              <p><span className="font-medium">Status:</span> {tfr.status}</p>
+              <p><span className="font-medium">Active TFRs in State:</span> {tfr.tfr_count}</p>
+              <p className="text-amber-900 mt-3">{tfr.advisory}</p>
             </div>
           </div>
 
@@ -108,7 +109,7 @@ function ResultsContent() {
           <div className="rounded-lg border border-slate-200 bg-white p-6">
             <h3 className="text-xl font-semibold text-slate-900 mb-4">Preflight Checklist</h3>
             {checklist.checklist_items && checklist.checklist_items.length > 0 ? (
-              <ul className="space-y-2">{checklist.checklist_items.map((item: string, i: number) => <li key={i} className="flex items-start gap-2 text-sm"><span className="text-blue-600">✓</span><span>{item}</span></li>)}</ul>
+              <ul className="space-y-2">{checklist.checklist_items.map((item: any, i: number) => <li key={i} className="flex items-start gap-2 text-sm"><span className="text-blue-600">✓</span><span><strong>{item.category}:</strong> {item.item}</span></li>)}</ul>
             ) : (
               <p className="text-sm text-slate-600">Standard preflight checklist applies.</p>
             )}
