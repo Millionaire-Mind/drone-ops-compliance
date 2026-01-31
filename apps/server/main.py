@@ -240,22 +240,37 @@ async def tool_generate_checklist(inp: GenerateChecklistInput) -> ToolResponse:
         "disclaimers": decision.disclaimers,
     }
 
-    # Best-effort: log advisory snapshot to Supabase (should NOT break response)
-    snapshot_payload = {
-        "request_id": request_id,
-        "timestamp_utc": utc_now_iso(),
-        "mission_type": inp.mission_type,
-        "inputs": {
-            "airspace_data": inp.airspace_data,
-            "weather_data": inp.weather_data,
-            "tfr_data": inp.tfr_data,
-        },
-        "result": result,
-        "tool_version": VERSION,
-        "source": "chatgpt_action",
-    }
+    # Extract coordinates from airspace_data for logging
+    coords = inp.airspace_data.get("coordinates", {})
+    lat = coords.get("lat")
+    lon = coords.get("lon")
 
-    snapshot_id = await _log_advisory_snapshot(snapshot_payload)
+    # Best-effort: log advisory snapshot to Supabase (should NOT break response)
+    if lat is not None and lon is not None:
+        snapshot_payload = {
+            "request_id": request_id,
+            "user_id": None,  # Anonymous for Phase 1
+            "timestamp_utc": utc_now_iso(),
+            "location_lat": float(lat),
+            "location_lon": float(lon),
+            "altitude_ft": inp.airspace_data.get("altitude_ft_agl"),
+            "mission_type": inp.mission_type,
+            "advisory_result": decision.overall_status,
+            "full_response": {
+                "result": result,
+                "inputs": {
+                    "airspace_data": inp.airspace_data,
+                    "weather_data": inp.weather_data,
+                    "tfr_data": inp.tfr_data,
+                },
+            },
+            "tool_version": VERSION,
+            "source": "web",
+        }
+        
+        snapshot_id = await _log_advisory_snapshot(snapshot_payload)
+    else:
+        snapshot_id = None
 
     meta = _tool_meta(
         sources=["Internal rules engine (packages/core/rules.py)"],
