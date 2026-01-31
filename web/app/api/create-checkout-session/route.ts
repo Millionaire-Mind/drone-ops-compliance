@@ -9,7 +9,6 @@ export async function POST(request: NextRequest) {
   try {
     const { priceId } = await request.json();
 
-    // Create Stripe checkout session
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       payment_method_types: ['card'],
@@ -23,7 +22,7 @@ export async function POST(request: NextRequest) {
       cancel_url: `${request.headers.get('origin')}/preflight`,
     });
 
-    return NextResponse.json({ sessionId: session.id });
+    return NextResponse.json({ url: session.url });
   } catch (error) {
     console.error('Stripe checkout error:', error);
     return NextResponse.json(

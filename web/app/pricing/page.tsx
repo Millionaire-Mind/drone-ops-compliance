@@ -1,9 +1,6 @@
 'use client';
 
-import { loadStripe } from '@stripe/stripe-js';
 import { useState } from 'react';
-
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
 
 export default function PricingPage() {
   const [loading, setLoading] = useState(false);
@@ -20,11 +17,10 @@ export default function PricingPage() {
         }),
       });
 
-      const { sessionId } = await response.json();
+      const data = await response.json();
 
-      const stripe = await stripePromise;
-      if (stripe) {
-        await stripe.redirectToCheckout({ sessionId });
+      if (data.url) {
+        window.location.href = data.url;
       }
     } catch (error) {
       console.error('Checkout error:', error);
