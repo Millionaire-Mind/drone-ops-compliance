@@ -47,7 +47,7 @@ export default function PricingPage() {
           <p className="mt-4 text-lg text-slate-600">Choose the plan that fits your needs</p>
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-2 max-w-5xl mx-auto">
+        <div id="education" className="grid gap-8 lg:grid-cols-2 max-w-5xl mx-auto mb-16">
           <div className="rounded-lg border-2 border-slate-200 bg-white p-8">
             <h3 className="text-2xl font-bold text-slate-900">Education</h3>
             <p className="mt-2 text-slate-600">For flight schools and instructors</p>
@@ -126,6 +126,139 @@ export default function PricingPage() {
               </li>
             </ul>
             <button onClick={handleUpgrade} disabled={loading} className="mt-8 block w-full rounded-md bg-blue-600 px-6 py-3 text-center font-medium text-white hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed">{loading ? 'Loading...' : 'Upgrade to Pro'}</button>
+          </div>
+        </div>
+
+        {/* Comparison Table */}
+        <div className="max-w-5xl mx-auto mb-12">
+          <h2 className="text-2xl font-bold text-slate-900 text-center mb-8">Feature Comparison</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse bg-white rounded-lg border border-slate-200">
+              <thead>
+                <tr className="bg-slate-50">
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-slate-900">Feature</th>
+                  <th className="px-6 py-4 text-center text-sm font-semibold text-slate-900">Education (Free)</th>
+                  <th className="px-6 py-4 text-center text-sm font-semibold text-blue-900 bg-blue-50">Pro ($79/mo)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                <tr>
+                  <td className="px-6 py-4 text-sm text-slate-900">Preflight Checks</td>
+                  <td className="px-6 py-4 text-center text-sm text-slate-600">Limited (for training)</td>
+                  <td className="px-6 py-4 text-center text-sm font-semibold text-blue-600">Unlimited</td>
+                </tr>
+                <tr>
+                  <td className="px-6 py-4 text-sm text-slate-900">Airspace Assessment</td>
+                  <td className="px-6 py-4 text-center">
+                    <svg className="h-5 w-5 text-green-500 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </td>
+                  <td className="px-6 py-4 text-center bg-blue-50">
+                    <svg className="h-5 w-5 text-green-500 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-6 py-4 text-sm text-slate-900">Weather Advisory</td>
+                  <td className="px-6 py-4 text-center">
+                    <svg className="h-5 w-5 text-green-500 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </td>
+                  <td className="px-6 py-4 text-center bg-blue-50">
+                    <svg className="h-5 w-5 text-green-500 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-6 py-4 text-sm text-slate-900">TFR Checks</td>
+                  <td className="px-6 py-4 text-center">
+                    <svg className="h-5 w-5 text-green-500 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </td>
+                  <td className="px-6 py-4 text-center bg-blue-50">
+                    <svg className="h-5 w-5 text-green-500 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-6 py-4 text-sm text-slate-900">GO/NO-GO Advisory</td>
+                  <td className="px-6 py-4 text-center">
+                    <svg className="h-5 w-5 text-green-500 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </td>
+                  <td className="px-6 py-4 text-center bg-blue-50">
+                    <svg className="h-5 w-5 text-green-500 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-6 py-4 text-sm text-slate-900">Advisory History</td>
+                  <td className="px-6 py-4 text-center">
+                    <svg className="h-5 w-5 text-slate-400 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </td>
+                  <td className="px-6 py-4 text-center text-sm font-semibold text-blue-600 bg-blue-50">90 days</td>
+                </tr>
+                <tr>
+                  <td className="px-6 py-4 text-sm text-slate-900">Export Data (CSV, JSON)</td>
+                  <td className="px-6 py-4 text-center">
+                    <svg className="h-5 w-5 text-slate-400 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </td>
+                  <td className="px-6 py-4 text-center bg-blue-50">
+                    <svg className="h-5 w-5 text-green-500 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-6 py-4 text-sm text-slate-900">Priority Support</td>
+                  <td className="px-6 py-4 text-center">
+                    <svg className="h-5 w-5 text-slate-400 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </td>
+                  <td className="px-6 py-4 text-center bg-blue-50">
+                    <svg className="h-5 w-5 text-green-500 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* FAQ Section */}
+        <div className="max-w-3xl mx-auto mb-12">
+          <h2 className="text-2xl font-bold text-slate-900 text-center mb-8">Frequently Asked Questions</h2>
+          <div className="space-y-6 bg-white rounded-lg border border-slate-200 p-6">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">What's the difference between Education and Pro?</h3>
+              <p className="text-sm text-slate-600">Education tier is free and perfect for flight schools and instructors for training purposes with limited usage. Pro tier is designed for professional operators who need unlimited checks, history tracking, and export capabilities for regular operations.</p>
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">How many checks can I run on the free tier?</h3>
+              <p className="text-sm text-slate-600">The Education tier is designed for training and instructional use. For regular operational use with unlimited checks, we recommend the Pro tier.</p>
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">Can I cancel my Pro subscription anytime?</h3>
+              <p className="text-sm text-slate-600">Yes, you can cancel your Pro subscription at any time through your Stripe billing portal. You'll retain access until the end of your current billing period.</p>
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">Does a "GO" status mean I'm authorized to fly?</h3>
+              <p className="text-sm text-slate-600">No. UAS FlightCheck provides advisory decision support only. A "GO" status does not authorize, approve, or certify any flight operation. You remain solely responsible for verifying all requirements with official FAA sources and obtaining necessary authorizations.</p>
+            </div>
           </div>
         </div>
 
