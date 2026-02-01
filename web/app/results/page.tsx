@@ -29,6 +29,30 @@ function ResultsContent() {
     return 'bg-slate-100 text-slate-800';
   };
 
+  const formatTimestamp = (isoString: string) => {
+    if (!isoString) return 'Unknown';
+    const date = new Date(isoString);
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZoneName: 'short'
+    });
+  };
+
+  const getDataAge = (isoString: string) => {
+    if (!isoString) return null;
+    const now = new Date();
+    const dataTime = new Date(isoString);
+    const diffMinutes = Math.floor((now.getTime() - dataTime.getTime()) / 60000);
+    
+    if (diffMinutes < 60) return `${diffMinutes} minutes ago`;
+    if (diffMinutes < 1440) return `${Math.floor(diffMinutes / 60)} hours ago`;
+    return `${Math.floor(diffMinutes / 1440)} days ago`;
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
       <header className="border-b border-slate-200 bg-white">
@@ -47,6 +71,7 @@ function ResultsContent() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-slate-900">Preflight Advisory Results</h1>
           <p className="mt-2 text-base text-slate-600">Review all constraints before flight</p>
+          <p className="mt-1 text-sm text-slate-500">Advisory generated: {formatTimestamp(new Date().toISOString())}</p>
         </div>
 
         <div className={`mb-6 rounded-lg border-2 p-6 ${getStatusBadge(checklist.overall_status)}`}>
@@ -56,7 +81,10 @@ function ResultsContent() {
 
         <div className="space-y-6">
           <div className="rounded-lg border border-slate-200 bg-white p-6">
-            <h3 className="text-xl font-semibold text-slate-900 mb-4">Airspace</h3>
+            <div className="flex justify-between items-start mb-4">
+              <h3 className="text-xl font-semibold text-slate-900">Airspace</h3>
+              <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">Data retrieved: Just now</span>
+            </div>
             <div className="space-y-2 text-sm">
               <p><span className="font-medium">Class:</span> {airspace.airspace_class || 'Unknown'}</p>
               <p><span className="font-medium">Facility:</span> {airspace.facility || 'N/A'}</p>
@@ -72,13 +100,23 @@ function ResultsContent() {
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-white p-6">
-            <h3 className="text-xl font-semibold text-slate-900 mb-4">Weather</h3>
+            <div className="flex justify-between items-start mb-4">
+              <h3 className="text-xl font-semibold text-slate-900">Weather</h3>
+              {weather.current_conditions.timestamp && (
+                <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">
+                  Observed: {getDataAge(weather.current_conditions.timestamp)}
+                </span>
+              )}
+            </div>
             <div className="space-y-2 text-sm">
               <p><span className="font-medium">Visibility:</span> {weather.current_conditions.visibility_sm ? `${weather.current_conditions.visibility_sm} SM` : 'Unknown'}</p>
               <p><span className="font-medium">Ceiling:</span> {weather.current_conditions.cloud_ceiling_ft ? `${weather.current_conditions.cloud_ceiling_ft} ft` : 'Unknown'}</p>
               <p><span className="font-medium">Wind:</span> {weather.current_conditions.wind_speed_kt ? `${weather.current_conditions.wind_speed_kt} kt` : 'Unknown'}</p>
               {weather.current_conditions.wind_gust_kt && <p><span className="font-medium">Gusts:</span> {weather.current_conditions.wind_gust_kt} kt</p>}
               <p><span className="font-medium">Part 107 Status:</span> {weather.part107_compliance.overall_status}</p>
+              {weather.current_conditions.timestamp && (
+                <p className="text-xs text-slate-500 mt-3">Last observation: {formatTimestamp(weather.current_conditions.timestamp)}</p>
+              )}
               {weather.part107_compliance.notes && weather.part107_compliance.notes.length > 0 && (
                 <div>
                   <p className="font-medium mt-3 text-slate-700">Notes:</p>
@@ -88,12 +126,22 @@ function ResultsContent() {
             </div>
           </div>
 
-          <div className="rounded-lg border border-slate-200 bg-white p-6">
-            <h3 className="text-xl font-semibold text-slate-900 mb-4">Temporary Flight Restrictions (TFR)</h3>
-            <div className="space-y-2 text-sm">
-              <p><span className="font-medium">Status:</span> {tfr.status}</p>
-              <p><span className="font-medium">Active TFRs in State:</span> {tfr.tfr_count}</p>
-              <p className="text-amber-900 mt-3">{tfr.advisory}</p>
+          <div className="rounded-lg border-2 border-amber-500 bg-amber-50 p-6">
+            <div className="flex justify-between items-start mb-4">
+              <h3 className="text-xl font-semibold text-amber-900">⚠️ Temporary Flight Restrictions (TFR)</h3>
+              <span className="text-xs text-amber-700 bg-amber-100 px-2 py-1 rounded">Checked: Just now</span>
+            </div>
+            <div className="space-y-3 text-sm">
+              <div className="bg-amber-100 border border-amber-300 rounded p-3">
+                <p className="font-bold text-amber-900 mb-1">IMPORTANT LIMITATION:</p>
+                <p className="text-amber-900">This check uses <strong>state-level filtering only</strong>. TFR boundaries and exact locations are NOT verified by this tool.</p>
+              </div>
+              <p><span className="font-medium text-amber-900">Status:</span> <span className="text-amber-900">{tfr.status}</span></p>
+              <p><span className="font-medium text-amber-900">Active TFRs in State:</span> <span className="text-amber-900">{tfr.tfr_count}</span></p>
+              <div className="bg-white border border-amber-300 rounded p-3 mt-3">
+                <p className="font-bold text-amber-900 mb-1">REQUIRED ACTION:</p>
+                <p className="text-amber-900">You MUST verify exact TFR boundaries at <a href="https://tfr.faa.gov" target="_blank" rel="noopener noreferrer" className="underline font-semibold">tfr.faa.gov</a> or an FAA-approved provider before flight.</p>
+              </div>
             </div>
           </div>
 
