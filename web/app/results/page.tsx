@@ -25,7 +25,9 @@ function ResultsContent() {
   }
 
   const results = JSON.parse(decodeURIComponent(resultsData));
-  const { airspace, weather, tfr, checklist } = results;
+  const { airspace, weather, tfr, checklist, mode, hours_until_flight, recheck_deadline } = results;
+
+  const isForecast = mode === 'FORECAST';
 
   const getStatusBadge = (status: string) => {
     if (status === 'GO') return 'bg-green-100 text-green-800';
@@ -91,6 +93,16 @@ function ResultsContent() {
     doc.text(`Mission Type: ${results.mission_type || 'Not specified'}`, 20, yPos);
     yPos += 10;
 
+    // Mode indicator
+    if (isForecast) {
+      doc.setFont('helvetica', 'bold');
+      doc.text(`MODE: FORECAST (${Math.round(hours_until_flight)} hours until flight)`, 20, yPos);
+      yPos += 6;
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Recheck Deadline: ${formatTimestamp(recheck_deadline)}`, 20, yPos);
+      yPos += 10;
+    }
+
     // Rationale
     if (checklist.rationale && checklist.rationale.length > 0) {
       doc.setFontSize(11);
@@ -136,7 +148,7 @@ function ResultsContent() {
     // Weather
     doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
-    doc.text('WEATHER CONDITIONS', 20, yPos);
+    doc.text(isForecast ? 'WEATHER FORECAST' : 'WEATHER CONDITIONS', 20, yPos);
     yPos += 6;
     
     doc.setFontSize(9);
@@ -154,7 +166,7 @@ function ResultsContent() {
     doc.text(`Part 107 Status: ${weather.part107_compliance.overall_status}`, 20, yPos);
     yPos += 5;
     if (weather.current_conditions.timestamp) {
-      doc.text(`Observed: ${formatTimestamp(weather.current_conditions.timestamp)}`, 20, yPos);
+      doc.text(`${isForecast ? 'Forecast for' : 'Observed'}: ${formatTimestamp(weather.current_conditions.timestamp)}`, 20, yPos);
       yPos += 8;
     } else {
       yPos += 3;
@@ -326,6 +338,45 @@ function ResultsContent() {
           <p className="mt-1 text-sm text-slate-500">Advisory generated: {formatTimestamp(new Date().toISOString())}</p>
         </div>
 
+        {/* FORECAST MODE BANNER */}
+        {isForecast && (
+          <div className="mb-6 rounded-lg border-2 border-blue-500 bg-blue-50 p-6">
+            <div className="flex items-start gap-3">
+              <div className="text-3xl">📅</div>
+              <div className="flex-1">
+                <h2 className="text-xl font-bold text-blue-900 mb-2">FORECAST-BASED ADVISORY</h2>
+                <p className="text-base text-blue-900 mb-3">
+                  This is a <strong>preliminary check</strong> based on weather forecasts. Weather conditions will change. 
+                  You must run a final check within 24 hours of flight.
+                </p>
+                <div className="bg-white border-2 border-blue-300 rounded p-3">
+                  <p className="text-sm font-bold text-blue-900">📍 Flight scheduled for: {formatTimestamp(weather.current_conditions.timestamp)}</p>
+                  <p className="text-sm font-bold text-blue-900 mt-1">⏰ Time until flight: ~{Math.round(hours_until_flight)} hours</p>
+                  <p className="text-sm font-bold text-blue-900 mt-1">🔔 RECHECK DEADLINE: {formatTimestamp(recheck_deadline)}</p>
+                </div>
+                <div className="mt-4 space-y-2">
+                  <p className="text-sm text-blue-800"><strong>✓ DEFINITIVE:</strong> Airspace classification, LAANC requirements</p>
+                  <p className="text-sm text-blue-800"><strong>⚠️ FORECAST:</strong> Wind speed, precipitation probability</p>
+                  <p className="text-sm text-blue-800"><strong>❌ NOT AVAILABLE:</strong> Visibility, cloud ceiling (verify day-of-flight)</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* REAL-TIME MODE BANNER */}
+        {!isForecast && (
+          <div className="mb-6 rounded-lg border-2 border-green-500 bg-green-50 p-4">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">✓</span>
+              <div>
+                <h2 className="text-lg font-bold text-green-900">REAL-TIME ADVISORY</h2>
+                <p className="text-sm text-green-800">Based on current conditions. Monitor weather until takeoff.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className={`mb-6 rounded-lg border-2 p-6 ${getStatusBadge(checklist.overall_status)}`}>
           <h2 className="text-2xl font-bold mb-2">Overall Status: {checklist.overall_status.replace(/_/g, ' ')}</h2>
           {checklist.rationale && checklist.rationale.length > 0 && <p className="text-base font-medium">{checklist.rationale.join(' ')}</p>}
@@ -335,7 +386,7 @@ function ResultsContent() {
           <div className="rounded-lg border border-slate-200 bg-white p-6">
             <div className="flex justify-between items-start mb-4">
               <h3 className="text-xl font-bold text-slate-900">Airspace</h3>
-              <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">Data retrieved: Just now</span>
+              <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded font-semibold">✓ DEFINITIVE</span>
             </div>
             <div className="space-y-2 text-base text-slate-800">
               <p><span className="font-semibold">Class:</span> {airspace.airspace_class || 'Unknown'}</p>
@@ -353,21 +404,38 @@ function ResultsContent() {
 
           <div className="rounded-lg border border-slate-200 bg-white p-6">
             <div className="flex justify-between items-start mb-4">
-              <h3 className="text-xl font-bold text-slate-900">Weather</h3>
-              {weather.current_conditions.timestamp && (
+              <h3 className="text-xl font-bold text-slate-900">{isForecast ? 'Weather Forecast' : 'Weather'}</h3>
+              {isForecast ? (
+                <span className="text-xs text-amber-600 bg-amber-100 px-2 py-1 rounded font-semibold">⚠️ FORECAST</span>
+              ) : (
                 <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">
-                  Observed: {getDataAge(weather.current_conditions.timestamp)}
+                  {weather.current_conditions.timestamp ? `Observed: ${getDataAge(weather.current_conditions.timestamp)}` : 'Just now'}
                 </span>
               )}
             </div>
             <div className="space-y-2 text-base text-slate-800">
-              <p><span className="font-semibold">Visibility:</span> {weather.current_conditions.visibility_sm ? `${weather.current_conditions.visibility_sm} SM` : 'Unknown'}</p>
-              <p><span className="font-semibold">Ceiling:</span> {weather.current_conditions.cloud_ceiling_ft ? `${weather.current_conditions.cloud_ceiling_ft} ft` : 'Unknown'}</p>
+              {isForecast && (
+                <div className="bg-amber-50 border border-amber-200 rounded p-3 mb-3">
+                  <p className="text-sm font-semibold text-amber-900">Forecast for: {formatTimestamp(weather.current_conditions.timestamp)}</p>
+                  {weather.current_conditions.period_name && (
+                    <p className="text-sm text-amber-800">Period: {weather.current_conditions.period_name}</p>
+                  )}
+                </div>
+              )}
+              <p><span className="font-semibold">Visibility:</span> {weather.current_conditions.visibility_sm ? `${weather.current_conditions.visibility_sm} SM` : isForecast ? 'Not available in forecast' : 'Unknown'}</p>
+              <p><span className="font-semibold">Ceiling:</span> {weather.current_conditions.cloud_ceiling_ft ? `${weather.current_conditions.cloud_ceiling_ft} ft` : isForecast ? 'Not available in forecast' : 'Unknown'}</p>
               <p><span className="font-semibold">Wind:</span> {weather.current_conditions.wind_speed_kt ? `${weather.current_conditions.wind_speed_kt} kt` : 'Unknown'}</p>
               {weather.current_conditions.wind_gust_kt && <p><span className="font-semibold">Gusts:</span> {weather.current_conditions.wind_gust_kt} kt</p>}
+              {weather.current_conditions.temperature_f && <p><span className="font-semibold">Temperature:</span> {weather.current_conditions.temperature_f}°F</p>}
+              {weather.current_conditions.precipitation_probability !== null && weather.current_conditions.precipitation_probability !== undefined && (
+                <p><span className="font-semibold">Precipitation:</span> {weather.current_conditions.precipitation_probability}% chance</p>
+              )}
               <p><span className="font-semibold">Part 107 Status:</span> {weather.part107_compliance.overall_status}</p>
-              {weather.current_conditions.timestamp && (
-                <p className="text-sm text-slate-500 mt-3">Last observation: {formatTimestamp(weather.current_conditions.timestamp)}</p>
+              {weather.current_conditions.detailed_forecast && (
+                <div className="mt-3">
+                  <p className="font-semibold">Detailed Forecast:</p>
+                  <p className="text-sm text-slate-700 bg-slate-50 p-3 rounded mt-1">{weather.current_conditions.detailed_forecast}</p>
+                </div>
               )}
               {weather.part107_compliance.notes && weather.part107_compliance.notes.length > 0 && (
                 <div>
@@ -403,6 +471,12 @@ function ResultsContent() {
               <ul className="list-disc pl-5 space-y-2 text-base text-slate-800">{checklist.required_actions.map((action: string, i: number) => <li key={i}>{action}</li>)}</ul>
             ) : (
               <p className="text-base text-slate-800">No specific actions required beyond standard preflight verification.</p>
+            )}
+            {isForecast && (
+              <div className="mt-4 bg-blue-50 border border-blue-200 rounded p-3">
+                <p className="font-semibold text-blue-900">Additional action for forecast mode:</p>
+                <p className="text-sm text-blue-800 mt-1">☐ Run final real-time check within 24 hours of flight ({formatTimestamp(recheck_deadline)})</p>
+              </div>
             )}
           </div>
 
