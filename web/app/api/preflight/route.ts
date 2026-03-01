@@ -7,13 +7,21 @@ export async function POST(request: Request) {
     const body = await request.json();
     console.log('Frontend received:', body);
     
-    // Convert datetime-local to full ISO format with timezone
+    // IMPORTANT: Keep local time, just add timezone offset
+    // datetime-local gives us "2026-03-04T14:00" (no timezone)
+    // We need to append the local timezone offset to preserve the time
     let isoDatetime = body.flight_datetime;
     
-    // If it's datetime-local format (2026-03-04T14:00), convert to ISO with timezone
     if (!isoDatetime.includes('Z') && !isoDatetime.includes('+')) {
-      const flightDate = new Date(isoDatetime);
-      isoDatetime = flightDate.toISOString();
+      // Get the timezone offset in minutes and convert to ±HH:MM format
+      const date = new Date(isoDatetime);
+      const tzOffset = -date.getTimezoneOffset(); // Minutes, reversed
+      const sign = tzOffset >= 0 ? '+' : '-';
+      const hours = String(Math.floor(Math.abs(tzOffset) / 60)).padStart(2, '0');
+      const minutes = String(Math.abs(tzOffset) % 60).padStart(2, '0');
+      
+      // Append timezone: "2026-03-04T14:00-08:00" (PST)
+      isoDatetime = `${isoDatetime}:00${sign}${hours}:${minutes}`;
     }
 
     const backendPayload = {
