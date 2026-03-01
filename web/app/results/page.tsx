@@ -2,6 +2,7 @@
 
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
+import jsPDF from 'jspdf';
 
 function ResultsContent() {
   const searchParams = useSearchParams();
@@ -51,6 +52,198 @@ function ResultsContent() {
     if (diffMinutes < 60) return `${diffMinutes} minutes ago`;
     if (diffMinutes < 1440) return `${Math.floor(diffMinutes / 60)} hours ago`;
     return `${Math.floor(diffMinutes / 1440)} days ago`;
+  };
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    let yPos = 20;
+
+    // Header
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('UAS FLIGHTCHECK ADVISORY REPORT', pageWidth / 2, yPos, { align: 'center' });
+    yPos += 8;
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text('INFORMATIONAL ONLY - NOT AUTHORIZATION TO FLY', pageWidth / 2, yPos, { align: 'center' });
+    yPos += 15;
+
+    // Advisory Summary
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('ADVISORY SUMMARY', 20, yPos);
+    yPos += 7;
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Status: ${checklist.overall_status.replace(/_/g, ' ')}`, 20, yPos);
+    yPos += 6;
+    doc.text(`Generated: ${formatTimestamp(new Date().toISOString())}`, 20, yPos);
+    yPos += 6;
+    doc.text(`Location: ${airspace.coordinates.lat}°, ${airspace.coordinates.lon}°`, 20, yPos);
+    yPos += 6;
+    doc.text(`Mission Type: ${results.mission_type || 'Not specified'}`, 20, yPos);
+    yPos += 10;
+
+    // Rationale
+    if (checklist.rationale && checklist.rationale.length > 0) {
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text('RATIONALE', 20, yPos);
+      yPos += 6;
+      
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      const rationale = doc.splitTextToSize(checklist.rationale.join(' '), pageWidth - 40);
+      doc.text(rationale, 20, yPos);
+      yPos += (rationale.length * 5) + 8;
+    }
+
+    // Airspace
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('AIRSPACE ASSESSMENT', 20, yPos);
+    yPos += 6;
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Class: ${airspace.airspace_class || 'Unknown'}`, 20, yPos);
+    yPos += 5;
+    doc.text(`Facility: ${airspace.facility || 'N/A'}`, 20, yPos);
+    yPos += 5;
+    doc.text(`LAANC Required: ${airspace.laanc_required ? 'YES' : airspace.laanc_required === false ? 'NO' : 'Unknown'}`, 20, yPos);
+    yPos += 5;
+    doc.text(`Data Retrieved: ${formatTimestamp(new Date().toISOString())}`, 20, yPos);
+    yPos += 8;
+
+    if (airspace.restrictions && airspace.restrictions.length > 0) {
+      doc.text('Restrictions:', 20, yPos);
+      yPos += 5;
+      airspace.restrictions.forEach((restriction: string) => {
+        const lines = doc.splitTextToSize(`• ${restriction}`, pageWidth - 40);
+        doc.text(lines, 25, yPos);
+        yPos += lines.length * 5;
+      });
+      yPos += 3;
+    }
+
+    // Weather
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('WEATHER CONDITIONS', 20, yPos);
+    yPos += 6;
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Visibility: ${weather.current_conditions.visibility_sm ? weather.current_conditions.visibility_sm + ' SM' : 'Unknown'}`, 20, yPos);
+    yPos += 5;
+    doc.text(`Ceiling: ${weather.current_conditions.cloud_ceiling_ft ? weather.current_conditions.cloud_ceiling_ft + ' ft' : 'Unknown'}`, 20, yPos);
+    yPos += 5;
+    doc.text(`Wind: ${weather.current_conditions.wind_speed_kt ? weather.current_conditions.wind_speed_kt + ' kt' : 'Unknown'}`, 20, yPos);
+    yPos += 5;
+    if (weather.current_conditions.wind_gust_kt) {
+      doc.text(`Gusts: ${weather.current_conditions.wind_gust_kt} kt`, 20, yPos);
+      yPos += 5;
+    }
+    doc.text(`Part 107 Status: ${weather.part107_compliance.overall_status}`, 20, yPos);
+    yPos += 5;
+    if (weather.current_conditions.timestamp) {
+      doc.text(`Observed: ${formatTimestamp(weather.current_conditions.timestamp)}`, 20, yPos);
+      yPos += 8;
+    } else {
+      yPos += 3;
+    }
+
+    // TFR
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('TEMPORARY FLIGHT RESTRICTIONS', 20, yPos);
+    yPos += 6;
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Status: ${tfr.status}`, 20, yPos);
+    yPos += 5;
+    doc.text(`Active TFRs in State: ${tfr.tfr_count}`, 20, yPos);
+    yPos += 5;
+    doc.text('Method: State-level filtering only', 20, yPos);
+    yPos += 8;
+    
+    doc.setFont('helvetica', 'bold');
+    const warningLines = doc.splitTextToSize('IMPORTANT: Verify exact TFR boundaries at tfr.faa.gov', pageWidth - 40);
+    doc.text(warningLines, 20, yPos);
+    yPos += (warningLines.length * 5) + 8;
+
+    // Required Actions
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('REQUIRED ACTIONS', 20, yPos);
+    yPos += 6;
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    if (checklist.required_actions && checklist.required_actions.length > 0) {
+      checklist.required_actions.forEach((action: string) => {
+        const lines = doc.splitTextToSize(`[ ] ${action}`, pageWidth - 40);
+        doc.text(lines, 20, yPos);
+        yPos += lines.length * 5;
+      });
+    } else {
+      doc.text('No specific actions required beyond standard verification.', 20, yPos);
+      yPos += 5;
+    }
+    yPos += 8;
+
+    // Check if we need a new page
+    if (yPos > 250) {
+      doc.addPage();
+      yPos = 20;
+    }
+
+    // Disclaimers
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('DISCLAIMERS', 20, yPos);
+    yPos += 6;
+    
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    checklist.disclaimers.forEach((disclaimer: string) => {
+      const lines = doc.splitTextToSize(`• ${disclaimer}`, pageWidth - 40);
+      doc.text(lines, 20, yPos);
+      yPos += lines.length * 4;
+    });
+    yPos += 8;
+
+    // Data Sources
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text('DATA SOURCES', 20, yPos);
+    yPos += 5;
+    
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Airspace: FAA UAS Data Delivery System', 20, yPos);
+    yPos += 4;
+    doc.text('Weather: NOAA/NWS API', 20, yPos);
+    yPos += 4;
+    doc.text('TFRs: FAA TFR Feed', 20, yPos);
+    yPos += 10;
+
+    // Footer
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'italic');
+    doc.text('Generated by UAS FlightCheck - https://drone-ops-compliance.vercel.app', 20, yPos);
+    yPos += 4;
+    doc.text('This advisory report is for informational purposes only and does not constitute', 20, yPos);
+    yPos += 3;
+    doc.text('authorization to operate a UAS.', 20, yPos);
+
+    // Save
+    const timestamp = new Date().toISOString().split('T')[0];
+    doc.save(`UAS-FlightCheck-Advisory-${timestamp}.pdf`);
   };
 
   return (
@@ -169,9 +362,12 @@ function ResultsContent() {
           <ul className="space-y-2 text-base text-amber-900">{checklist.disclaimers.map((disclaimer: string, i: number) => <li key={i}>• {disclaimer}</li>)}</ul>
         </div>
 
-        <div className="mt-8 flex gap-4 justify-center">
+        <div className="mt-8 flex gap-4 justify-center flex-wrap">
           <a href="/preflight" className="rounded-md bg-blue-600 px-6 py-3 text-white hover:bg-blue-700">Run Another Check</a>
           <a href="/" className="rounded-md border border-slate-300 bg-white px-6 py-3 text-slate-700 hover:bg-slate-50">Back to Home</a>
+          <button onClick={handleExportPDF} className="rounded-md border-2 border-[#FF6B35] bg-white px-6 py-3 text-[#FF6B35] font-semibold hover:bg-orange-50 transition-all">
+            📄 Export PDF Report
+          </button>
         </div>
       </main>
     </div>
