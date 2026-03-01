@@ -82,7 +82,7 @@ function ResultsContent() {
         <div className="space-y-6">
           <div className="rounded-lg border border-slate-200 bg-white p-6">
             <div className="flex justify-between items-start mb-4">
-              <h3 className="text-xl font-semibold text-slate-900">Airspace</h3>
+              <h3 className="text-xl font-bold text-slate-900">Airspace</h3>
               <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">Data retrieved: Just now</span>
             </div>
             <div className="space-y-2 text-sm">
@@ -101,7 +101,7 @@ function ResultsContent() {
 
           <div className="rounded-lg border border-slate-200 bg-white p-6">
             <div className="flex justify-between items-start mb-4">
-              <h3 className="text-xl font-semibold text-slate-900">Weather</h3>
+              <h3 className="text-xl font-bold text-slate-900">Weather</h3>
               {weather.current_conditions.timestamp && (
                 <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">
                   Observed: {getDataAge(weather.current_conditions.timestamp)}
@@ -128,7 +128,7 @@ function ResultsContent() {
 
           <div className="rounded-lg border-2 border-amber-500 bg-amber-50 p-6">
             <div className="flex justify-between items-start mb-4">
-              <h3 className="text-xl font-semibold text-amber-900">⚠️ Temporary Flight Restrictions (TFR)</h3>
+              <h3 className="text-xl font-bold text-amber-900">⚠️ Temporary Flight Restrictions (TFR)</h3>
               <span className="text-xs text-amber-700 bg-amber-100 px-2 py-1 rounded">Checked: Just now</span>
             </div>
             <div className="space-y-3 text-sm">
@@ -146,7 +146,7 @@ function ResultsContent() {
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-white p-6">
-            <h3 className="text-xl font-semibold text-slate-900 mb-4">Required Actions</h3>
+            <h3 className="text-xl font-bold text-slate-900 mb-4">Required Actions</h3>
             {checklist.required_actions && checklist.required_actions.length > 0 ? (
               <ul className="list-disc pl-5 space-y-2 text-sm">{checklist.required_actions.map((action: string, i: number) => <li key={i}>{action}</li>)}</ul>
             ) : (
@@ -155,7 +155,7 @@ function ResultsContent() {
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-white p-6">
-            <h3 className="text-xl font-semibold text-slate-900 mb-4">Preflight Checklist</h3>
+            <h3 className="text-xl font-bold text-slate-900 mb-4">Preflight Checklist</h3>
             {checklist.checklist_items && checklist.checklist_items.length > 0 ? (
               <ul className="space-y-2">{checklist.checklist_items.map((item: any, i: number) => <li key={i} className="flex items-start gap-2 text-sm"><span className="text-blue-600">✓</span><span><strong>{item.category}:</strong> {item.item}</span></li>)}</ul>
             ) : (
