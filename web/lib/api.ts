@@ -17,11 +17,13 @@ export interface AirspaceData {
     lat: number;
     lon: number;
   };
-  status: string;
+  altitude_ft_agl?: number;
+  status?: string;
 }
 
 export interface WeatherData {
   current_conditions: {
+    mode?: string;
     wind_speed_kt: number | null;
     wind_gust_kt: number | null;
     wind_direction_deg: number | null;
@@ -30,6 +32,10 @@ export interface WeatherData {
     temperature_f: number | null;
     conditions: string | null;
     timestamp: string | null;
+    detailed_forecast?: string;
+    precipitation_probability?: number | null;
+    period_name?: string;
+    forecast_generated?: string;
   } | null;
   part107_compliance: {
     visibility_ok: boolean | null;
@@ -37,19 +43,19 @@ export interface WeatherData {
     overall_status: string;
     notes: string[];
   };
-  station_id: string | null;
+  station_id?: string | null;
 }
 
 export interface TFRData {
-  query: {
+  query?: {
     latitude: number;
     longitude: number;
     radius_nm_requested: number;
     flight_datetime: string;
   };
-  relevance_method: string;
+  relevance_method?: string;
   state: string | null;
-  active_tfrs: any[];
+  active_tfrs?: any[];
   tfr_count: number;
   status: string;
   advisory: string;
@@ -61,18 +67,28 @@ export interface ChecklistData {
   checklist_items: Array<{
     category: string;
     item: string;
-    required: boolean;
-    status: string;
+    required?: boolean;
+    status?: string;
   }>;
   rationale: string[];
   disclaimers: string[];
 }
 
 export interface PreflightCheckResponse {
+  mode?: string;
+  hours_until_flight?: number;
+  recheck_deadline?: string | null;
+  flight_datetime?: string;
+  mission_type?: string;
   airspace: AirspaceData;
   weather: WeatherData;
   tfr: TFRData;
   checklist: ChecklistData;
+  meta?: {
+    request_id: string;
+    data_timestamp_utc: string;
+    sources: string[];
+  };
 }
 
 export async function runPreflightCheck(
@@ -86,7 +102,8 @@ export async function runPreflightCheck(
   });
 
   if (!response.ok) {
-    throw new Error('Preflight check failed');
+    const error = await response.json();
+    throw new Error(error.error || 'Preflight check failed');
   }
 
   return await response.json();
