@@ -346,18 +346,42 @@ function ResultsContent() {
               <div className="flex-1">
                 <h2 className="text-xl font-bold text-blue-900 mb-2">FORECAST-BASED ADVISORY</h2>
                 <p className="text-base text-blue-900 mb-3">
-                  This is a <strong>preliminary check</strong> based on weather forecasts. Weather conditions will change. 
-                  You must run a final check within 24 hours of flight.
+                  This is a <strong>preliminary planning check</strong> using weather forecasts. 
+                  NOAA provides forecasts in <strong>12-hour periods</strong> (morning, afternoon, evening, overnight), 
+                  not exact-hour predictions.
                 </p>
-                <div className="bg-white border-2 border-blue-300 rounded p-3">
-                  <p className="text-sm font-bold text-blue-900">📍 Flight scheduled for: {formatTimestamp(weather.current_conditions.timestamp)}</p>
+                <div className="bg-white border-2 border-blue-300 rounded p-3 mb-3">
+                  <p className="text-sm font-bold text-blue-900">
+                    📍 Your flight time: {formatTimestamp(weather.current_conditions.timestamp)}
+                  </p>
+                  {weather.current_conditions.period_name && (
+                    <p className="text-sm font-bold text-blue-900 mt-1">
+                      📊 Forecast period: {weather.current_conditions.period_name}
+                    </p>
+                  )}
                   <p className="text-sm font-bold text-blue-900 mt-1">⏰ Time until flight: ~{Math.round(hours_until_flight)} hours</p>
                   <p className="text-sm font-bold text-blue-900 mt-1">🔔 RECHECK DEADLINE: {formatTimestamp(recheck_deadline)}</p>
                 </div>
-                <div className="mt-4 space-y-2">
-                  <p className="text-sm text-blue-800"><strong>✓ DEFINITIVE:</strong> Airspace classification, LAANC requirements</p>
-                  <p className="text-sm text-blue-800"><strong>⚠️ FORECAST:</strong> Wind speed, precipitation probability</p>
-                  <p className="text-sm text-blue-800"><strong>❌ NOT AVAILABLE:</strong> Visibility, cloud ceiling (verify day-of-flight)</p>
+                <div className="bg-amber-50 border border-amber-300 rounded p-3 mb-3">
+                  <p className="text-sm font-semibold text-amber-900 mb-2">⚠️ Forecast Limitations:</p>
+                  <ul className="text-sm text-amber-900 space-y-1">
+                    <li>• Weather forecasts cover 12-hour periods, not specific hours</li>
+                    <li>• Visibility and cloud ceiling data not available in forecasts</li>
+                    <li>• Actual conditions may differ - forecasts change as flight date approaches</li>
+                  </ul>
+                </div>
+                <div className="mt-3 space-y-2">
+                  <p className="text-sm text-blue-800"><strong>✓ DEFINITIVE NOW:</strong> Airspace class, LAANC requirements (don't change)</p>
+                  <p className="text-sm text-blue-800"><strong>⚠️ FORECAST DATA:</strong> Wind speed, precipitation chance (12-hour period estimates)</p>
+                  <p className="text-sm text-blue-800"><strong>✓ AVAILABLE AT 24HR MARK:</strong> Exact visibility, ceiling, current wind (real-time observations)</p>
+                </div>
+                <div className="mt-4 bg-green-50 border border-green-300 rounded p-3">
+                  <p className="text-sm font-semibold text-green-900">✓ Next Steps:</p>
+                  <ol className="text-sm text-green-900 mt-2 space-y-1 list-decimal list-inside">
+                    <li>Apply for LAANC authorization now (if required)</li>
+                    <li>Monitor weather forecasts as flight date approaches</li>
+                    <li><strong>Run final real-time check within 24 hours of flight</strong> for exact conditions</li>
+                  </ol>
                 </div>
               </div>
             </div>
