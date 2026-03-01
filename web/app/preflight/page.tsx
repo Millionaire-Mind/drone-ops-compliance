@@ -30,12 +30,15 @@ export default function PreflightPage() {
         mission_type: formData.mission_type,
       });
 
+      console.log('Preflight results:', results); // Debug log
+
       // Navigate to results page with data
       const resultsParam = encodeURIComponent(JSON.stringify(results));
       router.push(`/results?data=${resultsParam}`);
     } catch (err) {
       console.error('Preflight check error:', err);
-      setError('An error occurred while running the preflight check. Please try again.');
+      const errorMessage = err instanceof Error ? err.message : 'An error occurred while running the preflight check. Please try again.';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -63,6 +66,9 @@ export default function PreflightPage() {
           <h1 className="text-3xl font-bold text-slate-900">Preflight Advisory Check</h1>
           <p className="mt-2 text-base text-slate-600">
             Enter your planned flight details to receive an advisory assessment.
+          </p>
+          <p className="mt-2 text-sm text-blue-600 font-medium">
+            ✓ Real-time checks (0-24 hours) · ✓ 7-day forecasts
           </p>
         </div>
 
@@ -157,7 +163,7 @@ export default function PreflightPage() {
                   onChange={(e) => setFormData({ ...formData, flight_datetime: e.target.value })}
                   className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 focus:border-blue-500 focus:ring-blue-500"
                 />
-                <p className="mt-1 text-xs text-slate-500">Local time at the flight location</p>
+                <p className="mt-1 text-xs text-slate-500">Up to 7 days in advance - local time at the flight location</p>
               </div>
 
               <div>
