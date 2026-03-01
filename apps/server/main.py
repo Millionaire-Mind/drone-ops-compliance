@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime, UTC
+from datetime import datetime, UTC, timedelta
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from .models import (
     AnalyzeWeatherInput,
@@ -20,7 +21,7 @@ from .models import (
 )
 from apps.server.services.faa_airspace import analyze_airspace
 from apps.server.services.faa_tfr import determine_us_state_from_latlon, fetch_tfr_list_json, filter_tfrs_by_state
-from apps.server.services.nws_weather import fetch_latest_observation_by_latlon, part107_compliance_assessment
+from apps.server.services.nws_weather import fetch_latest_observation_by_latlon, fetch_forecast_by_latlon, part107_compliance_assessment
 from packages.core.rules import decide_preflight
 
 # Optional: Supabase logging (Phase 1 advisory snapshots)
@@ -72,7 +73,7 @@ async def _log_advisory_snapshot(payload: dict[str, Any]) -> str | None:
 
 
 APP_NAME = "Drone Ops & Compliance Tool Server"
-VERSION = os.getenv("APP_VERSION", "0.6.0")
+VERSION = os.getenv("APP_VERSION", "0.7.0")
 GIT_COMMIT = os.getenv("GIT_COMMIT", "unknown")
 
 app = FastAPI(title=APP_NAME, version=VERSION)
@@ -82,8 +83,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",  # Local Next.js dev
-        "https://uasflightcheck.vercel.app",  # Production frontend (update with actual domain)
-        "https://uasflightcheck.io",  # Production domain (when registered)
+        "https://drone-ops-compliance.vercel.app",  # Production frontend
+        "https://uasflightcheck.vercel.app",
+        "https://uasflightcheck.io",
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
@@ -128,6 +130,174 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 
 
+# NEW UNIFIED PREFLIGHT ENDPOINT
+class PreflightCheckInput(BaseModel):
+    latitude: float
+    longitude: float
+    altitude_ft: int
+    flight_datetime: str  # ISO format
+    mission_type: str = "recreational"
+
+
+@app.post("/api/preflight")
+async def unified_preflight_check(inp: PreflightCheckInput) -> dict[str, Any]:
+    """
+    Unified preflight check that handles both real-time and forecast modes.
+    Determines mode based on flight_datetime.
+    """
+    request_id = str(uuid.uuid4())
+    
+    # Parse flight datetime
+    try:
+        flight_time = datetime.fromisoformat(inp.flight_datetime.replace("Z", "+00:00"))
+    except Exception:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Invalid flight_datetime format. Use ISO format."}
+        )
+    
+    now = datetime.now(UTC)
+    hours_until_flight = (flight_time - now).total_seconds() / 3600
+    
+    # Validate datetime range
+    if hours_until_flight < 0:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Cannot check past dates"}
+        )
+    
+    if hours_until_flight > 168:  # 7 days
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Forecasts only available for next 7 days"}
+        )
+    
+    # Determine mode
+    mode = "REAL_TIME" if hours_until_flight <= 24 else "FORECAST"
+    
+    # Calculate recheck deadline (24 hours before flight)
+    recheck_deadline = (flight_time - timedelta(hours=24)).isoformat()
+    
+    # Check airspace (same for both modes)
+    airspace_res = await analyze_airspace(inp.latitude, inp.longitude, inp.altitude_ft)
+    airspace_data = {
+        "airspace_class": airspace_res.airspace_class,
+        "facility": airspace_res.facility or airspace_res.airspace_name,
+        "laanc_required": airspace_res.laanc_required,
+        "laanc_available": airspace_res.laanc_available,
+        "max_altitude_ft": airspace_res.max_altitude_ft,
+        "restrictions": airspace_res.restrictions,
+        "coordinates": {"lat": inp.latitude, "lon": inp.longitude},
+        "altitude_ft_agl": inp.altitude_ft,
+    }
+    
+    # Fetch weather (forecast vs current based on mode)
+    if mode == "FORECAST":
+        weather_conditions, weather_meta = await fetch_forecast_by_latlon(
+            inp.latitude, inp.longitude, flight_time
+        )
+    else:
+        weather_conditions, weather_meta = await fetch_latest_observation_by_latlon(
+            inp.latitude, inp.longitude
+        )
+    
+    # Part 107 compliance
+    compliance = part107_compliance_assessment(
+        visibility_sm=weather_conditions.get("visibility_sm"),
+        cloud_ceiling_ft=weather_conditions.get("cloud_ceiling_ft"),
+        mode=mode,
+    )
+    
+    weather_data = {
+        "current_conditions": weather_conditions,
+        "part107_compliance": compliance,
+    }
+    
+    # Check TFRs
+    state = await determine_us_state_from_latlon(inp.latitude, inp.longitude)
+    tfr_data = {
+        "state": state,
+        "tfr_count": 0,
+        "status": "CLEAR",
+        "advisory": "State-level TFR check only. Verify at tfr.faa.gov before flight.",
+    }
+    
+    if state:
+        try:
+            full_tfrs = await fetch_tfr_list_json()
+            filtered_tfrs = filter_tfrs_by_state(full_tfrs, state)
+            tfr_data["tfr_count"] = len(filtered_tfrs)
+            tfr_data["status"] = "CLEAR" if len(filtered_tfrs) == 0 else "UNKNOWN"
+        except Exception:
+            pass
+    
+    # Generate decision
+    decision = decide_preflight(
+        mission_type=inp.mission_type,
+        airspace_data=airspace_data,
+        weather_data=weather_data,
+        tfr_data=tfr_data,
+    )
+    
+    # Log to Supabase
+    snapshot_payload = {
+        "request_id": request_id,
+        "user_id": None,
+        "timestamp_utc": utc_now_iso(),
+        "location_lat": float(inp.latitude),
+        "location_lon": float(inp.longitude),
+        "altitude_ft": inp.altitude_ft,
+        "mission_type": inp.mission_type,
+        "advisory_result": decision.overall_status,
+        "full_response": {
+            "mode": mode,
+            "hours_until_flight": hours_until_flight,
+            "airspace": airspace_data,
+            "weather": weather_data,
+            "tfr": tfr_data,
+            "checklist": {
+                "overall_status": decision.overall_status,
+                "required_actions": decision.required_actions,
+                "checklist_items": decision.checklist_items,
+                "rationale": decision.rationale,
+                "disclaimers": decision.disclaimers,
+            },
+        },
+        "tool_version": VERSION,
+        "source": "web",
+    }
+    
+    await _log_advisory_snapshot(snapshot_payload)
+    
+    # Return response
+    return {
+        "mode": mode,
+        "hours_until_flight": round(hours_until_flight, 1),
+        "recheck_deadline": recheck_deadline if mode == "FORECAST" else None,
+        "flight_datetime": flight_time.isoformat(),
+        "mission_type": inp.mission_type,
+        "airspace": airspace_data,
+        "weather": weather_data,
+        "tfr": tfr_data,
+        "checklist": {
+            "overall_status": decision.overall_status,
+            "required_actions": decision.required_actions,
+            "checklist_items": decision.checklist_items,
+            "rationale": decision.rationale,
+            "disclaimers": decision.disclaimers,
+        },
+        "meta": {
+            "request_id": request_id,
+            "data_timestamp_utc": utc_now_iso(),
+            "sources": [
+                "FAA UAS Data Delivery System",
+                "NOAA/NWS API",
+                "FAA TFR Feed",
+            ],
+        },
+    }
+
+
 @app.post("/tools/check_airspace", response_model=ToolResponse)
 async def tool_check_airspace(inp: CheckAirspaceInput) -> ToolResponse:
     request_id = str(uuid.uuid4())
@@ -164,7 +334,7 @@ async def tool_weather(inp: AnalyzeWeatherInput) -> ToolResponse:
         result={
             "current_conditions": current,
             "part107_compliance": compliance,
-            "station_id": current.get("raw_source", {}).get("nws_station_id"),
+            "station_id": current.get("raw", {}).get("nws_station_id"),
         },
         meta=_tool_meta(
             sources=["NOAA/NWS API (api.weather.gov)"],
