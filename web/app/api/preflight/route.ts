@@ -7,9 +7,11 @@ export async function POST(request: Request) {
     const body = await request.json();
     console.log('Frontend received:', body);
     
-    // Convert datetime-local to ISO format if needed
+    // Convert datetime-local to full ISO format with timezone
     let isoDatetime = body.flight_datetime;
-    if (!isoDatetime.includes('T')) {
+    
+    // If it's datetime-local format (2026-03-04T14:00), convert to ISO with timezone
+    if (!isoDatetime.includes('Z') && !isoDatetime.includes('+')) {
       const flightDate = new Date(isoDatetime);
       isoDatetime = flightDate.toISOString();
     }
