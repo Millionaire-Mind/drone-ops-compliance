@@ -5,48 +5,62 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://drone-ops-co
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    console.log('Frontend received:', body);
     
     // Convert datetime-local to ISO format if needed
     let isoDatetime = body.flight_datetime;
     if (!isoDatetime.includes('T')) {
-      // If it's not already ISO format, convert it
       const flightDate = new Date(isoDatetime);
       isoDatetime = flightDate.toISOString();
     }
 
-    // Call the new unified backend endpoint
+    const backendPayload = {
+      latitude: body.latitude,
+      longitude: body.longitude,
+      altitude_ft: body.altitude_ft_agl,
+      flight_datetime: isoDatetime,
+      mission_type: body.mission_type,
+    };
+
+    console.log('Sending to backend:', backendPayload);
+    console.log('Backend URL:', `${BACKEND_URL}/api/preflight`);
+
     const response = await fetch(`${BACKEND_URL}/api/preflight`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        latitude: body.latitude,
-        longitude: body.longitude,
-        altitude_ft: body.altitude_ft_agl,
-        flight_datetime: isoDatetime,
-        mission_type: body.mission_type,
-      }),
+      body: JSON.stringify(backendPayload),
     });
 
+    console.log('Backend response status:', response.status);
+
     if (!response.ok) {
-      const error = await response.json();
+      const errorText = await response.text();
+      console.error('Backend error response:', errorText);
+      
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { error: errorText };
+      }
+
       return NextResponse.json(
-        { error: error.error || 'Backend request failed' },
+        { error: errorData.error || 'Backend request failed' },
         { status: response.status }
       );
     }
 
     const data = await response.json();
+    console.log('Backend success, returning data');
     
-    // Return the response from the unified endpoint
-    // The new endpoint returns { mode, hours_until_flight, recheck_deadline, airspace, weather, tfr, checklist, meta }
     return NextResponse.json(data);
 
   } catch (error) {
     console.error('Preflight API error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }
     );
   }
