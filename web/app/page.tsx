@@ -249,6 +249,7 @@ export default function Home() {
       <footer className="border-t border-slate-200 bg-white">
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
           <div className="flex justify-center gap-6 mb-4">
+            <a href="/about" className="text-sm text-slate-600 hover:text-slate-900">About</a>
             <a href="/terms" className="text-sm text-slate-600 hover:text-slate-900">Terms of Service</a>
             <a href="/privacy" className="text-sm text-slate-600 hover:text-slate-900">Privacy Policy</a>
           </div>
