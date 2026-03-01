@@ -1,12 +1,16 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
+import { Suspense, useState } from 'react';
 import jsPDF from 'jspdf';
+import toast, { Toaster } from 'react-hot-toast';
 
 function ResultsContent() {
   const searchParams = useSearchParams();
   const resultsData = searchParams.get('data');
+  const [showEmailCapture, setShowEmailCapture] = useState(false);
+  const [email, setEmail] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!resultsData) {
     return (
@@ -244,10 +248,65 @@ function ResultsContent() {
     // Save
     const timestamp = new Date().toISOString().split('T')[0];
     doc.save(`UAS-FlightCheck-Advisory-${timestamp}.pdf`);
+
+    // Show email capture after PDF downloads
+    toast.success('PDF Downloaded!', {
+      duration: 3000,
+      icon: '📄',
+    });
+    
+    setTimeout(() => {
+      setShowEmailCapture(true);
+    }, 500);
+  };
+
+  const handleEmailSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!email || !email.includes('@')) {
+      toast.error('Please enter a valid email');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch('/api/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, source: 'pdf_export' }),
+      });
+
+      if (response.ok) {
+        toast.success('Thanks! We\'ll keep you updated.', {
+          duration: 4000,
+          icon: '✅',
+        });
+        setShowEmailCapture(false);
+        setEmail('');
+      } else {
+        const data = await response.json();
+        toast.error(data.error || 'Something went wrong. Please try again.');
+      }
+    } catch (error) {
+      toast.error('Network error. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSkipEmail = () => {
+    setShowEmailCapture(false);
+    toast('No problem! Enjoy your PDF.', {
+      icon: '👍',
+      duration: 2000,
+    });
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
+      <Toaster position="top-center" />
+      
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
@@ -361,6 +420,44 @@ function ResultsContent() {
           <h3 className="text-lg font-bold text-amber-900 mb-3">Important Disclaimers</h3>
           <ul className="space-y-2 text-base text-amber-900">{checklist.disclaimers.map((disclaimer: string, i: number) => <li key={i}>• {disclaimer}</li>)}</ul>
         </div>
+
+        {/* Email Capture Modal */}
+        {showEmailCapture && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+              <h3 className="text-xl font-bold text-slate-900 mb-2">📬 Want updates on new features?</h3>
+              <p className="text-sm text-slate-600 mb-4">
+                Get notified about Pro features, founder pricing, and tool improvements. No spam, unsubscribe anytime.
+              </p>
+              <form onSubmit={handleEmailSubmit} className="space-y-3">
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="your@email.com"
+                  className="w-full rounded-md border border-slate-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isSubmitting}
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="flex-1 rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitting ? 'Subscribing...' : 'Subscribe'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSkipEmail}
+                    className="flex-1 rounded-md border border-slate-300 bg-white px-4 py-2 text-slate-700 hover:bg-slate-50"
+                  >
+                    Skip
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         <div className="mt-8 flex gap-4 justify-center flex-wrap">
           <a href="/preflight" className="rounded-md bg-blue-600 px-6 py-3 text-white hover:bg-blue-700">Run Another Check</a>
