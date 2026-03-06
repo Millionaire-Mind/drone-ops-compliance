@@ -56,8 +56,24 @@ export async function POST(request: Request) {
         errorData = { error: errorText };
       }
 
+      // Extract message from all known FastAPI error shapes:
+      // { error: "..." }            — custom validation errors
+      // { detail: "..." }           — FastAPI HTTP exceptions
+      // { detail: [{msg: "..."}] }  — Pydantic 422 validation errors
+      // { result: { message: "..." }, meta: {...} } — unhandled exception handler
+      let message: string | undefined;
+      if (typeof errorData.error === 'string') {
+        message = errorData.error;
+      } else if (typeof errorData.detail === 'string') {
+        message = errorData.detail;
+      } else if (Array.isArray(errorData.detail) && errorData.detail[0]?.msg) {
+        message = `Validation error: ${errorData.detail[0].msg}`;
+      } else if (typeof errorData.result?.message === 'string') {
+        message = errorData.result.message;
+      }
+
       return NextResponse.json(
-        { error: errorData.error || 'Backend request failed' },
+        { error: message || `Backend error (${response.status})` },
         { status: response.status }
       );
     }
