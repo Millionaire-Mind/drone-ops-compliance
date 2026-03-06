@@ -1,8 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { runPreflightCheck } from '@/lib/api';
+
+type NominatimResult = {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+};
 
 export default function PreflightPage() {
   const router = useRouter();
@@ -15,6 +22,77 @@ export default function PreflightPage() {
     flight_datetime: '',
     mission_type: 'recreational' as 'recreational' | 'part107_commercial',
   });
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<NominatimResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [geoError, setGeoError] = useState<string | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    setSearchError(null);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    if (value.trim().length < 3) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+    searchTimeoutRef.current = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const params = new URLSearchParams({
+          q: value,
+          format: 'json',
+          limit: '5',
+          countrycodes: 'us',
+          email: 'support@uasflightcheck.io',
+        });
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`);
+        if (!res.ok) throw new Error('Search failed');
+        const data: NominatimResult[] = await res.json();
+        setSearchResults(data);
+        setShowDropdown(true);
+      } catch {
+        setSearchError('Location search unavailable. Enter coordinates manually.');
+        setShowDropdown(false);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+  };
+
+  const handleSelectResult = (result: NominatimResult) => {
+    setSearchQuery(result.display_name);
+    setFormData(prev => ({
+      ...prev,
+      latitude: parseFloat(result.lat).toFixed(6),
+      longitude: parseFloat(result.lon).toFixed(6),
+    }));
+    setShowDropdown(false);
+    setSearchResults([]);
+  };
+
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setGeoError('Geolocation is not supported by your browser.');
+      return;
+    }
+    setGeoError(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude.toFixed(6);
+        const lon = position.coords.longitude.toFixed(6);
+        setFormData(prev => ({ ...prev, latitude: lat, longitude: lon }));
+        setSearchQuery(`Current Location (${lat}, ${lon})`);
+      },
+      () => {
+        setGeoError('Unable to retrieve your location. Enter coordinates manually.');
+      }
+    );
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,6 +170,57 @@ export default function PreflightPage() {
           {/* Location Section */}
           <div>
             <h2 className="text-lg font-semibold text-slate-900 mb-4">Flight Location</h2>
+
+            {/* Address Search */}
+            <div className="mb-4">
+              <label htmlFor="address-search" className="block text-sm font-medium text-slate-700">
+                Search by Address or Place Name
+              </label>
+              <div className="relative mt-1">
+                <input
+                  type="text"
+                  id="address-search"
+                  value={searchQuery}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+                  placeholder="e.g. Denver City Park, Denver CO"
+                  autoComplete="off"
+                  className="block w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 focus:border-blue-500 focus:ring-blue-500"
+                />
+                {isSearching && (
+                  <span className="absolute right-3 top-2.5 text-xs text-slate-400">Searching...</span>
+                )}
+                {showDropdown && searchResults.length > 0 && (
+                  <ul className="absolute z-10 mt-1 w-full rounded-md border border-slate-200 bg-white shadow-lg max-h-60 overflow-auto">
+                    {searchResults.map((result) => (
+                      <li
+                        key={result.place_id}
+                        onMouseDown={() => handleSelectResult(result)}
+                        className="cursor-pointer px-4 py-2 text-sm text-slate-800 hover:bg-blue-50 border-b border-slate-100 last:border-0"
+                      >
+                        {result.display_name}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {showDropdown && searchResults.length === 0 && !isSearching && (
+                  <div className="absolute z-10 mt-1 w-full rounded-md border border-slate-200 bg-white px-4 py-2 text-sm text-slate-500 shadow-lg">
+                    No results found.
+                  </div>
+                )}
+              </div>
+              {searchError && <p className="mt-1 text-xs text-red-600">{searchError}</p>}
+              <button
+                type="button"
+                onClick={handleUseCurrentLocation}
+                className="mt-2 text-sm font-medium text-blue-600 hover:text-blue-800"
+              >
+                Use Current Location
+              </button>
+              {geoError && <p className="mt-1 text-xs text-red-600">{geoError}</p>}
+              <p className="mt-1 text-xs text-slate-500">Selecting a result below will auto-fill the coordinates. You can still edit them manually.</p>
+            </div>
+
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label htmlFor="latitude" className="block text-sm font-medium text-slate-700">

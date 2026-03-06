@@ -5,6 +5,16 @@ import { Suspense, useState } from 'react';
 import jsPDF from 'jspdf';
 import toast, { Toaster } from 'react-hot-toast';
 
+type WindRisk = { level: 'LOW' | 'MODERATE' | 'HIGH' | 'SEVERE'; icon: string; bgClass: string; textClass: string };
+
+function getWindRisk(windSpeedKt: number | null | undefined): WindRisk {
+  if (windSpeedKt == null) return { level: 'LOW', icon: '✓', bgClass: 'bg-green-100', textClass: 'text-green-800' };
+  if (windSpeedKt < 12) return { level: 'LOW', icon: '✓', bgClass: 'bg-green-100', textClass: 'text-green-800' };
+  if (windSpeedKt < 20) return { level: 'MODERATE', icon: '⚠️', bgClass: 'bg-yellow-100', textClass: 'text-yellow-800' };
+  if (windSpeedKt < 30) return { level: 'HIGH', icon: '⚠️', bgClass: 'bg-orange-100', textClass: 'text-orange-800' };
+  return { level: 'SEVERE', icon: '⚠️', bgClass: 'bg-red-100', textClass: 'text-red-800' };
+}
+
 function ResultsContent() {
   const searchParams = useSearchParams();
   const resultsData = searchParams.get('data');
@@ -158,6 +168,9 @@ function ResultsContent() {
     doc.text(`Ceiling: ${weather.current_conditions.cloud_ceiling_ft ? weather.current_conditions.cloud_ceiling_ft + ' ft' : 'Unknown'}`, 20, yPos);
     yPos += 5;
     doc.text(`Wind: ${weather.current_conditions.wind_speed_kt ? weather.current_conditions.wind_speed_kt + ' kt' : 'Unknown'}`, 20, yPos);
+    yPos += 5;
+    const pdfWindRisk = getWindRisk(weather.current_conditions.wind_speed_kt);
+    doc.text(`Wind Risk: ${pdfWindRisk.level}`, 20, yPos);
     yPos += 5;
     if (weather.current_conditions.wind_gust_kt) {
       doc.text(`Gusts: ${weather.current_conditions.wind_gust_kt} kt`, 20, yPos);
@@ -448,7 +461,10 @@ function ResultsContent() {
               )}
               <p><span className="font-semibold">Visibility:</span> {weather.current_conditions.visibility_sm ? `${weather.current_conditions.visibility_sm} SM` : isForecast ? 'Not available in forecast' : 'Unknown'}</p>
               <p><span className="font-semibold">Ceiling:</span> {weather.current_conditions.cloud_ceiling_ft ? `${weather.current_conditions.cloud_ceiling_ft} ft` : isForecast ? 'Not available in forecast' : 'Unknown'}</p>
-              <p><span className="font-semibold">Wind:</span> {weather.current_conditions.wind_speed_kt ? `${weather.current_conditions.wind_speed_kt} kt` : 'Unknown'}</p>
+              <p className="flex items-center gap-2 flex-wrap">
+                <span><span className="font-semibold">Wind:</span> {weather.current_conditions.wind_speed_kt ? `${weather.current_conditions.wind_speed_kt} kt` : 'Unknown'}</span>
+                {(() => { const r = getWindRisk(weather.current_conditions.wind_speed_kt); return <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${r.bgClass} ${r.textClass}`}>{r.icon} {r.level} RISK</span>; })()}
+              </p>
               {weather.current_conditions.wind_gust_kt && <p><span className="font-semibold">Gusts:</span> {weather.current_conditions.wind_gust_kt} kt</p>}
               {weather.current_conditions.temperature_f && <p><span className="font-semibold">Temperature:</span> {weather.current_conditions.temperature_f}°F</p>}
               {weather.current_conditions.precipitation_probability !== null && weather.current_conditions.precipitation_probability !== undefined && (
