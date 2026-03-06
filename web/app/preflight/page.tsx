@@ -3,6 +3,16 @@
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { runPreflightCheck } from '@/lib/api';
+import dynamic from 'next/dynamic';
+
+const FlightLocationMap = dynamic(() => import('@/components/FlightLocationMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-72 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center mb-4">
+      <p className="text-sm text-slate-400">Loading map...</p>
+    </div>
+  ),
+});
 
 type NominatimResult = {
   place_id: number;
@@ -93,6 +103,18 @@ export default function PreflightPage() {
       }
     );
   };
+
+  const handleMapLocationSelect = (lat: number, lng: number) => {
+    setFormData(prev => ({
+      ...prev,
+      latitude: lat.toFixed(6),
+      longitude: lng.toFixed(6),
+    }));
+    setSearchQuery(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+  };
+
+  const mapLat = formData.latitude !== '' && !Number.isNaN(parseFloat(formData.latitude)) ? parseFloat(formData.latitude) : null;
+  const mapLng = formData.longitude !== '' && !Number.isNaN(parseFloat(formData.longitude)) ? parseFloat(formData.longitude) : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -218,8 +240,14 @@ export default function PreflightPage() {
                 Use Current Location
               </button>
               {geoError && <p className="mt-1 text-xs text-red-600">{geoError}</p>}
-              <p className="mt-1 text-xs text-slate-500">Selecting a result below will auto-fill the coordinates. You can still edit them manually.</p>
+              <p className="mt-1 text-xs text-slate-500">Selecting a result above will auto-fill the coordinates. You can still edit them manually.</p>
             </div>
+
+            <FlightLocationMap
+              lat={mapLat}
+              lng={mapLng}
+              onLocationSelect={handleMapLocationSelect}
+            />
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
