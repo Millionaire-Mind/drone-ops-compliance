@@ -213,7 +213,7 @@ export default function PreflightPage() {
                   <span className="absolute right-3 top-2.5 text-xs text-slate-400">Searching...</span>
                 )}
                 {showDropdown && searchResults.length > 0 && (
-                  <ul className="absolute z-10 mt-1 w-full rounded-md border border-slate-200 bg-white shadow-lg max-h-60 overflow-auto">
+                  <ul className="absolute z-[1000] mt-1 w-full rounded-md border border-slate-200 bg-white shadow-lg max-h-60 overflow-auto">
                     {searchResults.map((result) => (
                       <li
                         key={result.place_id}
@@ -226,7 +226,7 @@ export default function PreflightPage() {
                   </ul>
                 )}
                 {showDropdown && searchResults.length === 0 && !isSearching && (
-                  <div className="absolute z-10 mt-1 w-full rounded-md border border-slate-200 bg-white px-4 py-2 text-sm text-slate-500 shadow-lg">
+                  <div className="absolute z-[1000] mt-1 w-full rounded-md border border-slate-200 bg-white px-4 py-2 text-sm text-slate-500 shadow-lg">
                     No results found.
                   </div>
                 )}
